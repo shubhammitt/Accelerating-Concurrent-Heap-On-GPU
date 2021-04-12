@@ -7,12 +7,12 @@ using namespace std;
  * BATCH_SIZE should be power of 2
  */
 
-#define BATCH_SIZE 512
-#define BLOCK_SIZE 1024
+#define BATCH_SIZE 1024
+#define BLOCK_SIZE BATCH_SIZE
 #define PARTIAL_BUFFER_CAPACITY (BATCH_SIZE - 1)
-#define NUMBER_OF_NODES 10
+#define NUMBER_OF_NODES (1<<13 - 1)
 #define HEAP_CAPACITY NUMBER_OF_NODES * BATCH_SIZE
-#define ROOT_NODE_IDX 0
+#define ROOT_NODE_IDX 1
 #define MASTER_THREAD 0
 
 enum LOCK_STATES {AVAILABLE, INUSE, TARGET, MARKED};
@@ -36,7 +36,7 @@ struct Partial_Buffer
 
 struct Heap
 {
-    int size = -1;
+    int size = 0;
     int arr[HEAP_CAPACITY];
 };
 
