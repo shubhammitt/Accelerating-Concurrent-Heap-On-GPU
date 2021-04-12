@@ -183,13 +183,13 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
             copy_arr1_to_arr2(merged_array_shared_mem, 0, combined_size, array_to_be_merged_shared_mem, 0);
             
             // copy root node into shared memory
-            copy_arr1_to_arr2(heap -> arr, 0, BATCH_SIZE, items_to_be_inserted_shared_mem, 0);
+            copy_arr1_to_arr2(heap -> arr, ROOT_NODE_IDX * BATCH_SIZE, ROOT_NODE_IDX * BATCH_SIZE + BATCH_SIZE, items_to_be_inserted_shared_mem, 0);
 
             // merge partial buffer with root node
             merge_and_sort(items_to_be_inserted_shared_mem, BATCH_SIZE, array_to_be_merged_shared_mem, combined_size, merged_array_shared_mem);
         
             // copy back to root node
-            copy_arr1_to_arr2(merged_array_shared_mem, 0, BATCH_SIZE, heap -> arr, 0);
+            copy_arr1_to_arr2(merged_array_shared_mem, 0, BATCH_SIZE, heap -> arr, ROOT_NODE_IDX * BATCH_SIZE);
 
             // copy to partial buffer
             copy_arr1_to_arr2(merged_array_shared_mem, BATCH_SIZE, BATCH_SIZE + combined_size, partial_buffer -> arr, 0);
@@ -204,6 +204,7 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
 
     if (my_thread_id == MASTER_THREAD)
         (heap -> size += 1);
+    __syncthreads();
 
     int tar = heap -> size;
     int cur = ROOT_NODE_IDX;
@@ -242,14 +243,11 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
         copy_arr1_to_arr2(merged_array_shared_mem, BATCH_SIZE, BATCH_SIZE << 1, items_to_be_inserted_shared_mem, 0);
 
         cur = tar >> --level;
-        if (cur != tar) {
-            if (my_thread_id == MASTER_THREAD) {
-                take_lock(&heap_locks[cur], AVAILABLE, INUSE);
-            }
-            __syncthreads();
-        }
 
         if(my_thread_id == MASTER_THREAD) {
+            if (cur != tar) {
+                take_lock(&heap_locks[cur], AVAILABLE, INUSE);
+            }
             release_lock(&heap_locks[cur >> 1], INUSE, AVAILABLE);
         }
         __syncthreads();
