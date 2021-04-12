@@ -68,6 +68,29 @@ __device__ void bitonic_sort(int *arr,
     }
 }
 
+
+__device__ void copy_shared_to_global(int *shared, int from_shared_idx1, int to_shared_idx2, int *global, int from_global_idx1)
+{
+    int my_thread_id = threadIdx.x;
+    int n = to_shared_idx2 - from_shared_idx1;
+    if(my_thread_id < n)
+    {
+        global[from_global_idx1 + my_thread_id] = shared[from_shared_idx1 + my_thread_id];
+    }
+    __syncthreads();
+}
+
+__device__ void copy_global_to_shared(int *global, int from_global_idx1, int to_global_idx2, int *shared, int from_shared_idx1)
+{
+    int my_thread_id = threadIdx.x;
+    int n = to_global_idx2 - from_global_idx1;
+    if(my_thread_id < n)
+    {
+        shared[from_shared_idx1 + my_thread_id] = global[from_global_idx1 + my_thread_id];
+    }
+    __syncthreads();
+}
+
 __global__ void heap_init(Heap *heap, 
                           Partial_Buffer *partial_buffer)
 {
@@ -92,17 +115,12 @@ __global__ void td_insertion(int *items_to_be_inserted,
      * number_of_items_to_be_inserted <= BATCH_SIZE
     */
     __shared__ int items_to_be_inserted_shared_mem[BATCH_SIZE];
-    int my_thread_id = threadIdx.x;
-    if (my_thread_id < number_of_items_to_be_inserted)
-    {
-        items_to_be_inserted_shared_mem[my_thread_id] = items_to_be_inserted[my_thread_id];
-    }
-    else if(my_thread_id < BATCH_SIZE)
-    {
-        items_to_be_inserted_shared_mem[my_thread_id] = INT_MAX;
-    }
-    __syncthreads();
+    __shared__ int array_to_be_merged_shared_mem[BATCH_SIZE];
+    __shared__ int merged_array_shared_mem[BATCH_SIZE << 1];
 
+    int my_thread_id = threadIdx.x;
+    copy_global_to_shared(items_to_be_inserted, 0, number_of_items_to_be_inserted, items_to_be_inserted_shared_mem, 0);
+    
     bitonic_sort(items_to_be_inserted_shared_mem, number_of_items_to_be_inserted);
 
     int root_node_idx = 0;

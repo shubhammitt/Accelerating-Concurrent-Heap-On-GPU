@@ -54,6 +54,9 @@ __device__ void release_lock(int *lock, int lock_state_1, int lock_state_2);
 
 // Algorithm referenced from https://wiki.rice.edu/confluence/download/attachments/4435861/comp322-s12-lec28-slides-JMC.pdf?version=1&modificationDate=1333163955158
 __device__ void bitonic_sort(int *arr, int size);
+__device__ void merge_and_sort(int *arr1, int idx1, int *arr2, int idx2, int *merged_arr);
+__device__ void copy_shared_to_global(int *shared, int from_shared_idx1, int to_shared_idx2, int *global, int from_global_idx1);
+__device__ void copy_global_to_shared(int *global, int from_global_idx1, int to_global_idx2, int *shared, int from_shared_idx1);
 __global__ void heap_init(Heap *heap);
 __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_be_inserted, int *heap_locks, Partial_Buffer *partial_buffer, Heap *heap);
 __host__ void heap_init();
