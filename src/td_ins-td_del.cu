@@ -51,7 +51,7 @@ __device__ void memset_arr(int *arr, int from_arr_idx1, int to_arr_idx2, int val
     int my_thread_id = threadIdx.x;
     int n = to_arr_idx2 - from_arr_idx1;
     if (my_thread_id < n) {
-        arr[from_arr_idx1 + my_thread_id] = INT_MAX;
+        arr[from_arr_idx1 + my_thread_id] = val;
     }
     __syncthreads();
 }
@@ -90,20 +90,20 @@ __device__ void bitonic_sort(int *arr, int size) {
 
 __device__ int binary_search(int *arr1, int high, int search, bool consider_equality) {
     int low = 0, mid = 0;
-    int ans = 0;
+    int ans = high;
     while (low <= high)
     {
         mid = (low + high) >> 1;
-        if (arr1[mid] <= search and consider_equality) {
+        if (arr1[mid] >= search and consider_equality) {
             ans = mid;
-            low = mid + 1;
+            high = mid - 1;
         }
-        else if (arr1[mid] < search) {
+        else if (arr1[mid] > search) {
             ans = mid;
-            low = mid + 1;
+            high = mid - 1;
         }
         else
-            high = mid - 1;
+            low = mid + 1;
     }
     return ans;
 }
@@ -134,9 +134,9 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
     __shared__ int merged_array_shared_mem[BATCH_SIZE << 1];
 
     int my_thread_id = threadIdx.x;
-    memset_arr(items_to_be_inserted_shared_mem, number_of_items_to_be_inserted, BATCH_SIZE);
-    memset_arr(array_to_be_merged_shared_mem, 0, BATCH_SIZE);
-    memset_arr(merged_array_shared_mem, 0, BATCH_SIZE << 1);
+    // memset_arr(items_to_be_inserted_shared_mem, number_of_items_to_be_inserted, BATCH_SIZE);
+    // memset_arr(array_to_be_merged_shared_mem, 0, BATCH_SIZE);
+    // memset_arr(merged_array_shared_mem, 0, BATCH_SIZE << 1);
     copy_arr1_to_arr2(items_to_be_inserted, 0, number_of_items_to_be_inserted, items_to_be_inserted_shared_mem, 0);
 
     bitonic_sort(items_to_be_inserted_shared_mem, number_of_items_to_be_inserted);
@@ -145,18 +145,22 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
         take_lock(&heap_locks[ROOT_NODE_IDX], AVAILABLE, INUSE);
 
     copy_arr1_to_arr2(partial_buffer -> arr, 0, partial_buffer -> size, array_to_be_merged_shared_mem, 0);
-    merge_and_sort(items_to_be_inserted_shared_mem, number_of_items_to_be_inserted, array_to_be_merged_shared_mem, partial_buffer -> size, merged_array_shared_mem);
+    merge_and_sort(items_to_be_inserted_shared_mem, number_of_items_to_be_inserted, \
+            array_to_be_merged_shared_mem, partial_buffer -> size, merged_array_shared_mem);
 
     if (partial_buffer -> size + number_of_items_to_be_inserted >= BATCH_SIZE) {
 
     }
     else {
+        copy_arr1_to_arr2(merged_array_shared_mem, 0, partial_buffer -> size + number_of_items_to_be_inserted, partial_buffer -> arr, 0);
+        // if (my_thread_id == MASTER_THREAD)
+        //     partial_buffer -> size += number_of_items_to_be_inserted;
         if (my_thread_id == MASTER_THREAD)
             release_lock(&heap_locks[ROOT_NODE_IDX], INUSE, AVAILABLE);
         // return;
     }
     // debug statement
-    copy_arr1_to_arr2(items_to_be_inserted_shared_mem, 0, number_of_items_to_be_inserted, items_to_be_inserted , 0);
+    // copy_arr1_to_arr2(partial_buffer -> arr, 0, 2 * number_of_items_to_be_inserted, items_to_be_inserted , 0);
 }
 
 
@@ -165,6 +169,8 @@ __host__ void heap_init() {
     gpuErrchk( cudaMalloc(&d_heap, sizeof(Heap))); // need to fill with INT_MAX
 
     heap_init<<<ceil(HEAP_CAPACITY/1024.0), 1024>>>(d_heap, d_partial_buffer);
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
 
     gpuErrchk( cudaMalloc((void**)&d_heap_locks, NUMBER_OF_NODES * sizeof(int)) );
     gpuErrchk( cudaMemset(d_heap_locks, AVAILABLE, NUMBER_OF_NODES * sizeof(int)) );
