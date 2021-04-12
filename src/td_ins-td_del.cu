@@ -134,33 +134,141 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
     __shared__ int merged_array_shared_mem[BATCH_SIZE << 1];
 
     int my_thread_id = threadIdx.x;
+
     // memset_arr(items_to_be_inserted_shared_mem, number_of_items_to_be_inserted, BATCH_SIZE);
     // memset_arr(array_to_be_merged_shared_mem, 0, BATCH_SIZE);
     // memset_arr(merged_array_shared_mem, 0, BATCH_SIZE << 1);
+
+    // copy keys to be inserted in shared memory
     copy_arr1_to_arr2(items_to_be_inserted, 0, number_of_items_to_be_inserted, items_to_be_inserted_shared_mem, 0);
 
+    // sort the keys to be inserted
     bitonic_sort(items_to_be_inserted_shared_mem, number_of_items_to_be_inserted);
 
+    // take root node lock
     if (my_thread_id == MASTER_THREAD)
         take_lock(&heap_locks[ROOT_NODE_IDX], AVAILABLE, INUSE);
 
+    __syncthreads();
+
+    // copy partial buffer into shared memory
     copy_arr1_to_arr2(partial_buffer -> arr, 0, partial_buffer -> size, array_to_be_merged_shared_mem, 0);
+
+    // merge partial buffer and keys to be inserted
     merge_and_sort(items_to_be_inserted_shared_mem, number_of_items_to_be_inserted, \
             array_to_be_merged_shared_mem, partial_buffer -> size, merged_array_shared_mem);
+    
+    int combined_size = partial_buffer -> size + number_of_items_to_be_inserted;
+    if (combined_size >= BATCH_SIZE) {
 
-    if (partial_buffer -> size + number_of_items_to_be_inserted >= BATCH_SIZE) {
+        // copy batch_size into insertion key list
+        copy_arr1_to_arr2(merged_array_shared_mem, 0, BATCH_SIZE, items_to_be_inserted_shared_mem, 0);
 
+        // copy rest over in partial buffer and update its size
+        copy_arr1_to_arr2(merged_array_shared_mem, BATCH_SIZE, combined_size - BATCH_SIZE, partial_buffer -> arr, 0);
+
+        // update partial buffer size
+        if (my_thread_id == MASTER_THREAD)
+            partial_buffer -> size = combined_size - BATCH_SIZE;
     }
     else {
-        copy_arr1_to_arr2(merged_array_shared_mem, 0, partial_buffer -> size + number_of_items_to_be_inserted, partial_buffer -> arr, 0);
-        // if (my_thread_id == MASTER_THREAD)
-        //     partial_buffer -> size += number_of_items_to_be_inserted;
+        if (heap -> size == -1) {
+            // transfer all keys in partial buffer
+            copy_arr1_to_arr2(merged_array_shared_mem, 0, combined_size, partial_buffer -> arr, 0);
+            if (my_thread_id == MASTER_THREAD)
+                partial_buffer -> size = combined_size;
+        }
+        else {
+            // copy partial buffer into shared array
+            copy_arr1_to_arr2(merged_array_shared_mem, 0, combined_size, array_to_be_merged_shared_mem, 0);
+            
+            // copy root node into shared memory
+            copy_arr1_to_arr2(heap -> arr, 0, BATCH_SIZE, items_to_be_inserted_shared_mem, 0);
+
+            // merge partial buffer with root node
+            merge_and_sort(items_to_be_inserted_shared_mem, BATCH_SIZE, array_to_be_merged_shared_mem, combined_size, merged_array_shared_mem);
+        
+            // copy back to root node
+            copy_arr1_to_arr2(merged_array_shared_mem, 0, BATCH_SIZE, heap -> arr, 0);
+
+            // copy to partial buffer
+            copy_arr1_to_arr2(merged_array_shared_mem, BATCH_SIZE, BATCH_SIZE + combined_size, partial_buffer -> arr, 0);
+
+            if (my_thread_id == MASTER_THREAD)
+                partial_buffer -> size = combined_size;
+        }
         if (my_thread_id == MASTER_THREAD)
             release_lock(&heap_locks[ROOT_NODE_IDX], INUSE, AVAILABLE);
-        // return;
+        return;
     }
-    // debug statement
-    // copy_arr1_to_arr2(partial_buffer -> arr, 0, 2 * number_of_items_to_be_inserted, items_to_be_inserted , 0);
+
+    if (my_thread_id == MASTER_THREAD)
+        (heap -> size += 1);
+
+    int tar = heap -> size;
+    int cur = ROOT_NODE_IDX;
+    int level = -1;
+    int dummy_tar = tar;
+    while(dummy_tar) {
+        level++;
+        dummy_tar >>= 1;
+    }
+
+    // take lock on target node 
+    if (tar != ROOT_NODE_IDX) {
+        if (my_thread_id == MASTER_THREAD) {
+            take_lock(&heap_locks[tar], AVAILABLE, INUSE);
+        }
+        __syncthreads();
+    }
+
+    while (cur != tar) {
+        if (get_lock_state(tar, heap_locks) == MARKED) { // next delete operation can cooperate with current insert operation
+            break;
+        }
+        
+        // copy current node to shared mem
+        int low = cur * BATCH_SIZE;
+        int high = low + BATCH_SIZE;
+        copy_arr1_to_arr2(heap -> arr, low, high, array_to_be_merged_shared_mem, 0);
+
+        // merger current batch with insertion list in shared mem
+        merge_and_sort(array_to_be_merged_shared_mem, BATCH_SIZE, items_to_be_inserted_shared_mem, BATCH_SIZE, merged_array_shared_mem);
+
+        // copy back to current batch
+        copy_arr1_to_arr2(merged_array_shared_mem, 0, BATCH_SIZE, heap -> arr, low);
+
+        // copy to insertion list
+        copy_arr1_to_arr2(merged_array_shared_mem, BATCH_SIZE, BATCH_SIZE << 1, items_to_be_inserted_shared_mem, 0);
+
+        cur = tar >> --level;
+        if (cur != tar) {
+            if (my_thread_id == MASTER_THREAD) {
+                take_lock(&heap_locks[cur], AVAILABLE, INUSE);
+            }
+            __syncthreads();
+        }
+
+        if(my_thread_id == MASTER_THREAD) {
+            release_lock(&heap_locks[cur >> 1], INUSE, AVAILABLE);
+        }
+        __syncthreads();
+
+    }
+
+    if(my_thread_id == MASTER_THREAD) {
+        try_lock(&heap_locks[tar], TARGET, INUSE);
+    }
+    __syncthreads();
+    tar = (get_lock_state(tar, heap_locks) == INUSE) ? tar : 1;
+    copy_arr1_to_arr2(items_to_be_inserted_shared_mem, 0, BATCH_SIZE, heap -> arr , tar * BATCH_SIZE);
+
+    if(my_thread_id == MASTER_THREAD) {
+        if(tar != cur) {
+            release_lock(&heap_locks[tar], get_lock_state(tar, heap_locks), AVAILABLE);
+        }
+        release_lock(&heap_locks[cur], INUSE, AVAILABLE);
+    }
 }
 
 
@@ -168,7 +276,7 @@ __host__ void heap_init() {
     gpuErrchk( cudaMalloc(&d_partial_buffer, sizeof(Partial_Buffer)));
     gpuErrchk( cudaMalloc(&d_heap, sizeof(Heap))); // need to fill with INT_MAX
 
-    heap_init<<<ceil(HEAP_CAPACITY/1024.0), 1024>>>(d_heap, d_partial_buffer);
+    heap_init<<<ceil(HEAP_CAPACITY / 1024.0), 1024>>>(d_heap, d_partial_buffer);
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchk( cudaDeviceSynchronize() );
 

@@ -36,7 +36,7 @@ struct Partial_Buffer
 
 struct Heap
 {
-    int size = 0;
+    int size = -1;
     int arr[HEAP_CAPACITY];
 };
 
