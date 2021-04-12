@@ -17,6 +17,14 @@ enum LOCK_STATES {AVAILABLE, INUSE, TARGET, MARKED};
 
 // Code taken from https://stackoverflow.com/a/14038590
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
+{
+   if (code != cudaSuccess) 
+   {
+      fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+      if (abort) exit(code);
+   }
+}
 
 struct Partial_Buffer
 {
@@ -30,6 +38,15 @@ struct Heap
     int arr[HEAP_CAPACITY];
 };
 
+#ifndef GLOBAL_H
+#define GLOBAL_H
+
+inline Heap *d_heap;
+inline Partial_Buffer *d_partial_buffer;
+inline int *d_heap_locks;
+
+#endif
+
 __device__ int get_lock_state(int node_idx, int *heap_locks);
 __device__ void take_lock(int *lock, int lock_state_1, int lock_state_2);
 __device__ int try_lock(int *lock, int lock_state_1, int lock_state_2);
@@ -37,8 +54,6 @@ __device__ void release_lock(int *lock, int lock_state_1, int lock_state_2);
 
 // Algorithm referenced from https://wiki.rice.edu/confluence/download/attachments/4435861/comp322-s12-lec28-slides-JMC.pdf?version=1&modificationDate=1333163955158
 __device__ void bitonic_sort(int *arr, int size);
-
 __global__ void heap_init(Heap *heap);
 __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_be_inserted, int *heap_locks, Partial_Buffer *partial_buffer, Heap *heap);
-
-void heap_init();
+__host__ void heap_init();
