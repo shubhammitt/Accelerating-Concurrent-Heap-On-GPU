@@ -88,8 +88,40 @@ __device__ void bitonic_sort(int *arr, int size) {
 }
 
 
+__device__ int binary_search(int *arr1, int high, int search, bool consider_equality) {
+    int low = 0, mid = 0;
+    int ans = 0;
+    while (low <= high)
+    {
+        mid = (low + high) >> 1;
+        if (arr1[mid] <= search and consider_equality) {
+            ans = mid;
+            low = mid + 1;
+        }
+        else if (arr1[mid] < search) {
+            ans = mid;
+            low = mid + 1;
+        }
+        else
+            high = mid - 1;
+    }
+    return ans;
+}
+
+
 __device__ void merge_and_sort(int *arr1, int idx1, int *arr2, int idx2, int *merged_arr) {
     int my_thread_id = threadIdx.x;
+
+    if (my_thread_id < idx1) {
+        merged_arr[my_thread_id + binary_search(arr2, idx2, arr1[my_thread_id], 1)] = arr1[my_thread_id];
+    }
+
+    if (my_thread_id < idx2) {
+        merged_arr[my_thread_id + binary_search(arr1, idx1, arr2[my_thread_id], 0)] = arr2[my_thread_id];
+    }
+
+    __syncthreads();
+    
 }
 
 
