@@ -37,6 +37,18 @@ __global__ void heap_init(Heap *heap, Partial_Buffer *partial_buffer) {
 }
 
 
+__device__ int bit_reversal(int n, int level) {
+    if (n <= 3)
+        return n;
+
+    int ans = 1 << level--;
+    while(n != 1) {
+        ans += (n & 1) << level--;
+        n >>= 1;
+    }
+    return ans;
+
+}
 __device__ void copy_arr1_to_arr2(int *arr1, int from_arr1_idx1, int to_arr1_idx2, int *arr2, int from_arr2_idx1) {
     int my_thread_id = threadIdx.x;
     int n = to_arr1_idx2 - from_arr1_idx1;
@@ -168,8 +180,7 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
         copy_arr1_to_arr2(merged_array_shared_mem, BATCH_SIZE, combined_size - BATCH_SIZE, partial_buffer -> arr, 0);
 
         // update partial buffer size
-        if (my_thread_id == MASTER_THREAD)
-            partial_buffer -> size = combined_size - BATCH_SIZE;
+        partial_buffer -> size = combined_size - BATCH_SIZE;
     }
     else {
         if (heap -> size == -1) {
@@ -206,15 +217,17 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
         (heap -> size += 1);
     __syncthreads();
 
-    int tar = heap -> size;
-    int cur = ROOT_NODE_IDX;
     int level = -1;
-    int dummy_tar = tar;
+    int dummy_tar = heap -> size;
+    int tar = dummy_tar;
     while(dummy_tar) {
         level++;
         dummy_tar >>= 1;
     }
 
+    tar = bit_reversal(tar, level);
+    int cur = ROOT_NODE_IDX;
+    
     // take lock on target node 
     if (tar != ROOT_NODE_IDX) {
         if (my_thread_id == MASTER_THREAD) {

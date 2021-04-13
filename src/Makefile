@@ -1,6 +1,6 @@
 
 test: test.cu td_ins-td_del.cu
-	nvcc test.cu td_ins-td_del.cu -std=c++17 -o test
+	nvcc test.cu -O3 td_ins-td_del.cu -std=c++17 -o test
 	./test
 all:
 	nvcc td_ins-td_del.cu -o td_ins-td_del
