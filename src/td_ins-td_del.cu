@@ -55,7 +55,6 @@ __device__ void copy_arr1_to_arr2(int *arr1, int from_arr1_idx1, int to_arr1_idx
     if (my_thread_id < n) {
         arr2[from_arr2_idx1 + my_thread_id] = arr1[from_arr1_idx1 + my_thread_id];
     }
-    __syncthreads();
 }
 
 
@@ -141,9 +140,10 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
     /*
      * number_of_items_to_be_inserted <= BATCH_SIZE
     */
+    const int double_batch_size = BATCH_SIZE << 1;
     __shared__ int items_to_be_inserted_shared_mem[BATCH_SIZE];
     __shared__ int array_to_be_merged_shared_mem[BATCH_SIZE];
-    __shared__ int merged_array_shared_mem[BATCH_SIZE << 1];
+    __shared__ int merged_array_shared_mem[double_batch_size];
 
     int my_thread_id = threadIdx.x;
 
@@ -153,6 +153,7 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
 
     // copy keys to be inserted in shared memory
     copy_arr1_to_arr2(items_to_be_inserted, 0, number_of_items_to_be_inserted, items_to_be_inserted_shared_mem, 0);
+    __syncthreads();
 
     // sort the keys to be inserted
     bitonic_sort(items_to_be_inserted_shared_mem, number_of_items_to_be_inserted);
@@ -165,6 +166,7 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
 
     // copy partial buffer into shared memory
     copy_arr1_to_arr2(partial_buffer -> arr, 0, partial_buffer -> size, array_to_be_merged_shared_mem, 0);
+    __syncthreads();
 
     // merge partial buffer and keys to be inserted
     merge_and_sort(items_to_be_inserted_shared_mem, number_of_items_to_be_inserted, \
@@ -178,6 +180,7 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
 
         // copy rest over in partial buffer and update its size
         copy_arr1_to_arr2(merged_array_shared_mem, BATCH_SIZE, combined_size - BATCH_SIZE, partial_buffer -> arr, 0);
+        __syncthreads();
 
         // update partial buffer size
         partial_buffer -> size = combined_size - BATCH_SIZE;
@@ -195,6 +198,7 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
             
             // copy root node into shared memory
             copy_arr1_to_arr2(heap -> arr, ROOT_NODE_IDX * BATCH_SIZE, ROOT_NODE_IDX * BATCH_SIZE + BATCH_SIZE, items_to_be_inserted_shared_mem, 0);
+            __syncthreads();
 
             // merge partial buffer with root node
             merge_and_sort(items_to_be_inserted_shared_mem, BATCH_SIZE, array_to_be_merged_shared_mem, combined_size, merged_array_shared_mem);
@@ -217,16 +221,14 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
         (heap -> size += 1);
     __syncthreads();
 
-    int level = -1;
-    int dummy_tar = heap -> size;
-    int tar = dummy_tar;
-    while(dummy_tar) {
-        level++;
-        dummy_tar >>= 1;
-    }
+    int tar = heap -> size, level = __log2f(tar); // may have floating point error, default to -1
+    // int dummy_tar = tar;
+    // while(dummy_tar) {
+    //     level++;
+    //     dummy_tar >>= 1;
+    // }
 
     tar = bit_reversal(tar, level);
-    int cur = ROOT_NODE_IDX;
     
     // take lock on target node 
     if (tar != ROOT_NODE_IDX) {
@@ -236,15 +238,17 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
         __syncthreads();
     }
 
+    int low = 0, high = 0, cur = ROOT_NODE_IDX;;
     while (cur != tar) {
         if (get_lock_state(tar, heap_locks) == MARKED) { // next delete operation can cooperate with current insert operation
             break;
         }
         
+        low = cur * BATCH_SIZE;
+        high = low + BATCH_SIZE;
         // copy current node to shared mem
-        int low = cur * BATCH_SIZE;
-        int high = low + BATCH_SIZE;
         copy_arr1_to_arr2(heap -> arr, low, high, array_to_be_merged_shared_mem, 0);
+        __syncthreads();
 
         // merger current batch with insertion list in shared mem
         merge_and_sort(array_to_be_merged_shared_mem, BATCH_SIZE, items_to_be_inserted_shared_mem, BATCH_SIZE, merged_array_shared_mem);
@@ -252,8 +256,9 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
         // copy back to current batch
         copy_arr1_to_arr2(merged_array_shared_mem, 0, BATCH_SIZE, heap -> arr, low);
 
+        __syncthreads();
         // copy to insertion list
-        copy_arr1_to_arr2(merged_array_shared_mem, BATCH_SIZE, BATCH_SIZE << 1, items_to_be_inserted_shared_mem, 0);
+        copy_arr1_to_arr2(merged_array_shared_mem, BATCH_SIZE, double_batch_size, items_to_be_inserted_shared_mem, 0);
 
         cur = tar >> --level;
 
@@ -264,7 +269,6 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
             release_lock(&heap_locks[cur >> 1], INUSE, AVAILABLE);
         }
         __syncthreads();
-
     }
 
     if(my_thread_id == MASTER_THREAD) {
