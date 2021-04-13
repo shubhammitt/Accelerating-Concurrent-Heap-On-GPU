@@ -41,9 +41,9 @@ __device__ int bit_reversal(int n, int level) {
     if (n <= 3)
         return n;
 
-    int ans = 1 << level--;
+    int ans = 1 << (level--);
     while(n != 1) {
-        ans += (n & 1) << level--;
+        ans += (n & 1) << (level--);
         n >>= 1;
     }
     return ans;
@@ -183,10 +183,11 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
         __syncthreads();
 
         // update partial buffer size
-        partial_buffer -> size = combined_size - BATCH_SIZE;
+        if (my_thread_id == MASTER_THREAD)
+            partial_buffer -> size = combined_size - BATCH_SIZE;
     }
     else {
-        if (heap -> size == -1) {
+        if (heap -> size == 0) {
             // transfer all keys in partial buffer
             copy_arr1_to_arr2(merged_array_shared_mem, 0, combined_size, partial_buffer -> arr, 0);
             if (my_thread_id == MASTER_THREAD)
@@ -260,7 +261,7 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
         // copy to insertion list
         copy_arr1_to_arr2(merged_array_shared_mem, BATCH_SIZE, double_batch_size, items_to_be_inserted_shared_mem, 0);
 
-        cur = tar >> --level;
+        cur = tar >> (--level);
 
         if(my_thread_id == MASTER_THREAD) {
             if (cur != tar) {
@@ -286,7 +287,173 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
     }
 }
 
+__global__ void td_delete(int *items_deleted, int *heap_locks, Partial_Buffer *partial_buffer, Heap *heap) {
+    
+    int my_thread_id = threadIdx.x;
+    const int double_batch_size = BATCH_SIZE << 1;
+    __shared__ int arr1_shared_mem[BATCH_SIZE];
+    __shared__ int arr2_shared_mem[BATCH_SIZE];
+    __shared__ int arr3_shared_mem[BATCH_SIZE];
+    __shared__ int merged_array_shared_mem[double_batch_size];
 
+
+    // take root node lock
+    if (my_thread_id == MASTER_THREAD)
+        take_lock(&heap_locks[ROOT_NODE_IDX], AVAILABLE, INUSE);
+
+    __syncthreads();
+
+    // heap is empty
+    if (heap -> size == 0) {
+        if (partial_buffer -> size != 0) {
+            copy_arr1_to_arr2(partial_buffer -> arr, 0, partial_buffer -> size, items_deleted, 0);
+            partial_buffer -> size = 0;
+        }
+        if (my_thread_id == MASTER_THREAD)
+            release_lock(&heap_locks[ROOT_NODE_IDX], INUSE, AVAILABLE);
+        return;
+    }
+
+    // copy root into shared mem arr1 to be used now and later too
+    copy_arr1_to_arr2(heap -> arr, ROOT_NODE_IDX * BATCH_SIZE, ROOT_NODE_IDX * BATCH_SIZE + BATCH_SIZE, arr1_shared_mem, 0);
+    // copy root node into list of deleted mem
+    copy_arr1_to_arr2(arr1_shared_mem, 0, BATCH_SIZE, items_deleted, 0);
+
+    int tar = heap -> size;
+
+    if (tar == 1) { // WARNING: not written in pseudocode
+        if(my_thread_id == MASTER_THREAD) {
+            partial_buffer -> size = 0;
+            release_lock(&heap_locks[ROOT_NODE_IDX], INUSE, AVAILABLE);
+
+        }
+        return; 
+    }
+
+    int level = __log2f(tar);
+    tar = bit_reversal(tar, level);
+    int cur = 1;
+    
+    if (my_thread_id == MASTER_THREAD) {
+        try_lock(&heap_locks[tar], TARGET, MARKED);
+    } 
+
+    __syncthreads(); // necessary so that master thread do not decrement while other threads are initialising tar
+    if (my_thread_id == MASTER_THREAD)
+        heap -> size -= 1;
+    
+
+    if (get_lock_state(tar, heap_locks) == MARKED) {
+        while(get_lock_state(tar, heap_locks) != AVAILABLE);
+    }
+    else {
+        if (my_thread_id == MASTER_THREAD) {
+            take_lock(&heap_locks[tar], AVAILABLE, INUSE);
+        }
+        __syncthreads();
+        // root node elements are already copied in arr1
+        copy_arr1_to_arr2(heap -> arr, tar * BATCH_SIZE, (tar + 1) * BATCH_SIZE, arr1_shared_mem, 0);
+        memset_arr(heap -> arr, tar * BATCH_SIZE, (tar + 1) * BATCH_SIZE);
+        __syncthreads();
+
+        if (my_thread_id == MASTER_THREAD) {
+            release_lock(&heap_locks[tar], INUSE, AVAILABLE);
+        }        
+    }
+
+    // copy partial buffer in arr2_shared mem
+    copy_arr1_to_arr2(partial_buffer -> arr, 0, partial_buffer -> size, arr2_shared_mem, 0);
+    __syncthreads();
+
+    // merge sort partial buffer in arr2 with root node in arr1
+    merge_and_sort(arr1_shared_mem, BATCH_SIZE, arr2_shared_mem, partial_buffer -> size, merged_array_shared_mem);
+
+    // put back to partial buffer since never used
+    copy_arr1_to_arr2(merged_array_shared_mem, BATCH_SIZE, BATCH_SIZE + partial_buffer -> size, partial_buffer -> arr, 0);
+
+    // copy back to arr1
+    copy_arr1_to_arr2(merged_array_shared_mem, 0, BATCH_SIZE, arr1_shared_mem, 0);
+
+    int left = 0, right = 0;
+    int largest_left = 0, largest_right = 0;
+    while(1) {
+        // arr1 conntains parent always
+        left = cur << 1;
+        right = left + 1;
+
+        // in my implmentation, either parent has both child or none
+        if((cur << 1) >= NUMBER_OF_NODES) {
+            
+            copy_arr1_to_arr2(arr1_shared_mem, 0, BATCH_SIZE, heap -> arr, cur * BATCH_SIZE);
+            if (my_thread_id == MASTER_THREAD) {
+                release_lock(&heap_locks[cur], INUSE, AVAILABLE);
+            }
+            // Warning: what if lock is released while some other threads are busy in copy?? at other places too
+            return;
+        }
+
+        if(my_thread_id == MASTER_THREAD) {
+            // take lock on left and right child with mainatining order to avoid possible deadlock
+            take_lock(&heap_locks[left], AVAILABLE, INUSE);
+            take_lock(&heap_locks[right], AVAILABLE, INUSE);
+        }
+        __syncthreads();
+
+        largest_left = heap -> arr[(left * BATCH_SIZE) + BATCH_SIZE - 1];
+        largest_right = heap -> arr[(right * BATCH_SIZE) + BATCH_SIZE - 1];
+
+        copy_arr1_to_arr2(heap -> arr, left * BATCH_SIZE, (left * BATCH_SIZE) + BATCH_SIZE, arr2_shared_mem, 0);
+        copy_arr1_to_arr2(heap -> arr, right * BATCH_SIZE, (right * BATCH_SIZE) + BATCH_SIZE, arr3_shared_mem, 0);
+        __syncthreads();
+
+        merge_and_sort(arr2_shared_mem, BATCH_SIZE, arr3_shared_mem, BATCH_SIZE, merged_array_shared_mem);
+
+        // swap left right to avoid code duplication
+        if(largest_left > largest_right) {
+            int temp = left;
+            left = right;
+            right = temp;
+        }
+        // now right will be largest element
+
+        copy_arr1_to_arr2(merged_array_shared_mem, BATCH_SIZE, double_batch_size, heap -> arr, right * BATCH_SIZE);
+        __syncthreads();
+        if(my_thread_id == MASTER_THREAD) {
+            release_lock(&heap_locks[right], INUSE, AVAILABLE);
+        }
+        copy_arr1_to_arr2(merged_array_shared_mem, 0, BATCH_SIZE, arr2_shared_mem, 0);
+        __syncthreads();
+
+        if(arr1_shared_mem[BATCH_SIZE - 1] <= arr2_shared_mem[0]) {
+            copy_arr1_to_arr2(arr2_shared_mem, 0, BATCH_SIZE, heap -> arr, left * BATCH_SIZE);
+            __syncthreads();
+            if(my_thread_id == MASTER_THREAD) {
+                release_lock(&heap_locks[left], INUSE, AVAILABLE);
+            }
+            break;
+        }
+        merge_and_sort(arr1_shared_mem, BATCH_SIZE, arr2_shared_mem, BATCH_SIZE, merged_array_shared_mem);
+        
+        copy_arr1_to_arr2(merged_array_shared_mem, 0, BATCH_SIZE, heap -> arr, cur * BATCH_SIZE);
+        __syncthreads();
+        
+        if(my_thread_id == MASTER_THREAD) {
+            release_lock(&heap_locks[cur], INUSE, AVAILABLE);
+        }
+        copy_arr1_to_arr2(merged_array_shared_mem, BATCH_SIZE, double_batch_size, arr1_shared_mem, 0);
+        cur = left;
+        __syncthreads();
+    }
+
+    // copy current array to global heap before releasing lock
+    copy_arr1_to_arr2(arr1_shared_mem, 0, BATCH_SIZE, heap -> arr, cur * BATCH_SIZE);
+    __syncthreads();
+
+    if(my_thread_id == MASTER_THREAD) {
+        release_lock(&heap_locks[left], INUSE, AVAILABLE);
+    }
+
+}
 __host__ void heap_init() {
     gpuErrchk( cudaMalloc(&d_partial_buffer, sizeof(Partial_Buffer)));
     gpuErrchk( cudaMalloc(&d_heap, sizeof(Heap))); // need to fill with INT_MAX

@@ -10,8 +10,9 @@ using namespace std;
 #define BATCH_SIZE 1024
 #define BLOCK_SIZE BATCH_SIZE
 #define PARTIAL_BUFFER_CAPACITY (BATCH_SIZE - 1)
-#define NUMBER_OF_NODES (1<<18 - 1)
-#define HEAP_CAPACITY NUMBER_OF_NODES * BATCH_SIZE
+ // should be power of 2
+#define NUMBER_OF_NODES (1<<17)
+#define HEAP_CAPACITY (NUMBER_OF_NODES - 1) * (BATCH_SIZE)
 #define ROOT_NODE_IDX 1
 #define MASTER_THREAD 0
 
@@ -64,5 +65,5 @@ __device__ int binary_search(int *arr1, int high, int search, bool consider_equa
 // https://www2.hawaii.edu/~nodari/teaching/f16/notes/notes10.pdf
 __device__ void merge_and_sort(int *arr1, int idx1, int *arr2, int idx2, int *merged_arr);
 __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_be_inserted, int *heap_locks, Partial_Buffer *partial_buffer, Heap *heap);
-
+__global__ void td_delete(int *items_deleted, int *heap_locks, Partial_Buffer *partial_buffer, Heap *heap);
 __host__ void heap_init();
