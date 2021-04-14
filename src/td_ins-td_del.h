@@ -7,11 +7,11 @@ using namespace std;
  * BATCH_SIZE should be power of 2
  */
 
-#define BATCH_SIZE 1024
+#define BATCH_SIZE 1
 #define BLOCK_SIZE BATCH_SIZE
 #define PARTIAL_BUFFER_CAPACITY (BATCH_SIZE - 1)
  // should be power of 2
-#define NUMBER_OF_NODES (1<<17)
+#define NUMBER_OF_NODES (1<<14)
 #define HEAP_CAPACITY (NUMBER_OF_NODES) * (BATCH_SIZE)
 #define ROOT_NODE_IDX 1
 #define MASTER_THREAD 0
@@ -39,6 +39,7 @@ struct Heap
 {
     int size = 0;
     int global_id = 1;
+    int global_idx = 1;
     int arr[HEAP_CAPACITY];
 };
 
@@ -65,6 +66,6 @@ __device__ void bitonic_sort(int *arr, int size);
 __device__ int binary_search(int *arr1, int high, int search, bool consider_equality);
 // https://www2.hawaii.edu/~nodari/teaching/f16/notes/notes10.pdf
 __device__ void merge_and_sort(int *arr1, int idx1, int *arr2, int idx2, int *merged_arr);
-__global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_be_inserted, int *heap_locks, Partial_Buffer *partial_buffer, Heap *heap);
-__global__ void td_delete(int *items_deleted, int *heap_locks, Partial_Buffer *partial_buffer, Heap *heap);
+__global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_be_inserted, int *heap_locks, Partial_Buffer *partial_buffer, Heap *heap, int my_id);
+__global__ void td_delete(int *items_deleted, int *heap_locks, Partial_Buffer *partial_buffer, Heap *heap, int my_id);
 __host__ void heap_init();

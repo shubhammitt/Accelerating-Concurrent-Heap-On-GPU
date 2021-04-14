@@ -29,6 +29,7 @@ __device__ void release_lock(int *lock, int lock_state_1, int lock_state_2) {
 __global__ void heap_init(Heap *heap, Partial_Buffer *partial_buffer) {
     int index = threadIdx.x + blockDim.x * blockIdx.x;
     heap -> global_id = 1;
+    heap -> global_idx = 1;
     heap -> size = 0;
     partial_buffer -> size = 0;
     if (index < HEAP_CAPACITY) {
@@ -139,7 +140,7 @@ __device__ void merge_and_sort(int *arr1, int idx1, int *arr2, int idx2, int *me
 }
 
 
-__global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_be_inserted, int *heap_locks, Partial_Buffer *partial_buffer, Heap *heap) {
+__global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_be_inserted, int *heap_locks, Partial_Buffer *partial_buffer, Heap *heap, int my_id) {
     /*
      * number_of_items_to_be_inserted <= BATCH_SIZE
     */
@@ -162,8 +163,12 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
     bitonic_sort(items_to_be_inserted_shared_mem, number_of_items_to_be_inserted);
 
     // take root node lock
-    if (my_thread_id == MASTER_THREAD)
+    if (my_thread_id == MASTER_THREAD){
+        // printf("%d %d\n", heap -> global_id, my_id);
+        while(atomicCAS(&(heap -> global_id), my_id, -1) != my_id);
         take_lock(&heap_locks[ROOT_NODE_IDX], AVAILABLE, INUSE);
+        heap -> global_id = my_id + 1;
+    }
 
     __syncthreads();
 
@@ -290,7 +295,7 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
     }
 }
 
-__global__ void td_delete(int *items_deleted, int *heap_locks, Partial_Buffer *partial_buffer, Heap *heap) {
+__global__ void td_delete(int *items_deleted, int *heap_locks, Partial_Buffer *partial_buffer, Heap *heap, int my_id) {
     
     int my_thread_id = threadIdx.x;
     const int double_batch_size = BATCH_SIZE << 1;
@@ -302,17 +307,22 @@ __global__ void td_delete(int *items_deleted, int *heap_locks, Partial_Buffer *p
 
     // take root node lock
     if (my_thread_id == MASTER_THREAD)
+    {
+        while(atomicCAS(&(heap -> global_id), my_id, -1) != my_id);
         take_lock(&heap_locks[ROOT_NODE_IDX], AVAILABLE, INUSE);
+        heap -> global_id = my_id + 1;
+    }
+    printf("%d \n", my_id);
     __syncthreads();
 
     // heap is empty
     if (heap -> size == 0) {
         if (partial_buffer -> size != 0) {
-            copy_arr1_to_arr2(partial_buffer -> arr, 0, partial_buffer -> size, items_deleted + (heap -> global_id) * BATCH_SIZE, 0);
+            copy_arr1_to_arr2(partial_buffer -> arr, 0, partial_buffer -> size, items_deleted + (heap -> global_idx) * BATCH_SIZE, 0);
             __syncthreads();
             if(my_thread_id == MASTER_THREAD) {
                 partial_buffer -> size = 0;
-                heap -> global_id += 1;
+                heap -> global_idx += 1;
             }
         }
         if (my_thread_id == MASTER_THREAD) {
@@ -324,17 +334,15 @@ __global__ void td_delete(int *items_deleted, int *heap_locks, Partial_Buffer *p
     // copy root into shared mem arr1 to be used now and later too
     copy_arr1_to_arr2(heap -> arr, ROOT_NODE_IDX * BATCH_SIZE, ROOT_NODE_IDX * BATCH_SIZE + BATCH_SIZE, arr1_shared_mem, 0);
     // copy root node into list of deleted mem
-    copy_arr1_to_arr2(arr1_shared_mem, 0, BATCH_SIZE, items_deleted + heap -> global_id * BATCH_SIZE, 0);
+    copy_arr1_to_arr2(arr1_shared_mem, 0, BATCH_SIZE, items_deleted + heap -> global_idx * BATCH_SIZE, 0);
     __syncthreads();
-    if(my_thread_id == MASTER_THREAD) {
-        heap -> global_id += 1;
-    }
 
     int tar = heap -> size;
 
     if (tar == 1) { // WARNING: not written in pseudocode
         if (partial_buffer -> size == 0) {
             heap -> size = 0;
+            heap -> global_idx += 1;
         }
         else {
             copy_arr1_to_arr2(partial_buffer -> arr, 0 , partial_buffer -> size, heap -> arr, ROOT_NODE_IDX * BATCH_SIZE);
