@@ -164,8 +164,7 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
 
     // take root node lock
     if (my_thread_id == MASTER_THREAD){
-        // printf("%d %d\n", heap -> global_id, my_id);
-        while(atomicCAS(&(heap -> global_id), my_id, -1) != my_id);
+        while(atomicCAS(&(heap -> global_id), my_id, 0) != my_id);
         take_lock(&heap_locks[ROOT_NODE_IDX], AVAILABLE, INUSE);
         heap -> global_id = my_id + 1;
     }
@@ -308,11 +307,11 @@ __global__ void td_delete(int *items_deleted, int *heap_locks, Partial_Buffer *p
     // take root node lock
     if (my_thread_id == MASTER_THREAD)
     {
-        while(atomicCAS(&(heap -> global_id), my_id, -1) != my_id);
+        while(atomicCAS(&(heap -> global_id), my_id, 0) != my_id);
         take_lock(&heap_locks[ROOT_NODE_IDX], AVAILABLE, INUSE);
         heap -> global_id = my_id + 1;
+        // printf("%d \n", my_id);
     }
-    printf("%d \n", my_id);
     __syncthreads();
 
     // heap is empty
@@ -324,25 +323,30 @@ __global__ void td_delete(int *items_deleted, int *heap_locks, Partial_Buffer *p
                 partial_buffer -> size = 0;
                 heap -> global_idx += 1;
             }
+            __syncthreads();
         }
         if (my_thread_id == MASTER_THREAD) {
             release_lock(&heap_locks[ROOT_NODE_IDX], INUSE, AVAILABLE);
         }
+        __syncthreads();
         return;
     }
 
     // copy root into shared mem arr1 to be used now and later too
     copy_arr1_to_arr2(heap -> arr, ROOT_NODE_IDX * BATCH_SIZE, ROOT_NODE_IDX * BATCH_SIZE + BATCH_SIZE, arr1_shared_mem, 0);
     // copy root node into list of deleted mem
-    copy_arr1_to_arr2(arr1_shared_mem, 0, BATCH_SIZE, items_deleted + heap -> global_idx * BATCH_SIZE, 0);
+    copy_arr1_to_arr2(arr1_shared_mem, 0, BATCH_SIZE, items_deleted, heap -> global_idx * BATCH_SIZE);
     __syncthreads();
-
+    if(my_thread_id == MASTER_THREAD) {
+        heap -> global_idx += 1;
+    }
+    __syncthreads();
     int tar = heap -> size;
 
     if (tar == 1) { // WARNING: not written in pseudocode
         if (partial_buffer -> size == 0) {
-            heap -> size = 0;
-            heap -> global_idx += 1;
+            if (my_thread_id == MASTER_THREAD)
+                heap -> size = 0;
         }
         else {
             copy_arr1_to_arr2(partial_buffer -> arr, 0 , partial_buffer -> size, heap -> arr, ROOT_NODE_IDX * BATCH_SIZE);
