@@ -28,6 +28,9 @@ __device__ void release_lock(int *lock, int lock_state_1, int lock_state_2) {
 
 __global__ void heap_init(Heap *heap, Partial_Buffer *partial_buffer) {
     int index = threadIdx.x + blockDim.x * blockIdx.x;
+    heap -> global_id = 1;
+    heap -> size = 0;
+    partial_buffer -> size = 0;
     if (index < HEAP_CAPACITY) {
         heap -> arr[index] = INT_MAX;
     }
@@ -305,18 +308,27 @@ __global__ void td_delete(int *items_deleted, int *heap_locks, Partial_Buffer *p
     // heap is empty
     if (heap -> size == 0) {
         if (partial_buffer -> size != 0) {
-            copy_arr1_to_arr2(partial_buffer -> arr, 0, partial_buffer -> size, items_deleted, 0);
-            partial_buffer -> size = 0;
+            copy_arr1_to_arr2(partial_buffer -> arr, 0, partial_buffer -> size, items_deleted + (heap -> global_id) * BATCH_SIZE, 0);
+            __syncthreads();
+            if(my_thread_id == MASTER_THREAD) {
+                partial_buffer -> size = 0;
+                heap -> global_id += 1;
+            }
         }
-        if (my_thread_id == MASTER_THREAD)
+        if (my_thread_id == MASTER_THREAD) {
             release_lock(&heap_locks[ROOT_NODE_IDX], INUSE, AVAILABLE);
+        }
         return;
     }
 
     // copy root into shared mem arr1 to be used now and later too
     copy_arr1_to_arr2(heap -> arr, ROOT_NODE_IDX * BATCH_SIZE, ROOT_NODE_IDX * BATCH_SIZE + BATCH_SIZE, arr1_shared_mem, 0);
     // copy root node into list of deleted mem
-    copy_arr1_to_arr2(arr1_shared_mem, 0, BATCH_SIZE, items_deleted, 0);
+    copy_arr1_to_arr2(arr1_shared_mem, 0, BATCH_SIZE, items_deleted + heap -> global_id * BATCH_SIZE, 0);
+    __syncthreads();
+    if(my_thread_id == MASTER_THREAD) {
+        heap -> global_id += 1;
+    }
 
     int tar = heap -> size;
 

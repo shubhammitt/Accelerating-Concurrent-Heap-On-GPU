@@ -12,7 +12,7 @@ using namespace std;
 #define PARTIAL_BUFFER_CAPACITY (BATCH_SIZE - 1)
  // should be power of 2
 #define NUMBER_OF_NODES (1<<17)
-#define HEAP_CAPACITY (NUMBER_OF_NODES - 1) * (BATCH_SIZE)
+#define HEAP_CAPACITY (NUMBER_OF_NODES) * (BATCH_SIZE)
 #define ROOT_NODE_IDX 1
 #define MASTER_THREAD 0
 
