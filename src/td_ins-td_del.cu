@@ -29,7 +29,6 @@ __device__ void release_lock(int *lock, int lock_state_1, int lock_state_2) {
 __global__ void heap_init(Heap *heap, Partial_Buffer *partial_buffer) {
     int index = threadIdx.x + blockDim.x * blockIdx.x;
     heap -> global_id = 1;
-    heap -> global_idx = 1;
     heap -> size = 0;
     partial_buffer -> size = 0;
     if (index < HEAP_CAPACITY) {
@@ -47,7 +46,7 @@ __device__ int bit_reversal(int n, int level) {
 
     int ans = 1 << (level--);
     while(n != 1) {
-        ans += (n & 1) << (level--);
+        ans += ((n & 1) << (level--));
         n >>= 1;
     }
     return ans;
@@ -106,6 +105,7 @@ __device__ void bitonic_sort(int *arr, int size) {
 __device__ int binary_search(int *arr1, int high, int search, bool consider_equality) {
     int low = 0, mid = 0;
     int ans = high;
+    if(high == 0) return 0;
     while (low <= high)
     {
         mid = (low + high) >> 1;
@@ -151,10 +151,6 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
 
     int my_thread_id = threadIdx.x;
 
-    // memset_arr(items_to_be_inserted_shared_mem, number_of_items_to_be_inserted, BATCH_SIZE);
-    // memset_arr(array_to_be_merged_shared_mem, 0, BATCH_SIZE);
-    // memset_arr(merged_array_shared_mem, 0, BATCH_SIZE << 1);
-
     // copy keys to be inserted in shared memory
     copy_arr1_to_arr2(items_to_be_inserted, 0, number_of_items_to_be_inserted, items_to_be_inserted_shared_mem, 0);
     __syncthreads();
@@ -175,11 +171,11 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
     copy_arr1_to_arr2(partial_buffer -> arr, 0, partial_buffer -> size, array_to_be_merged_shared_mem, 0);
     __syncthreads();
 
+    int combined_size = partial_buffer -> size + number_of_items_to_be_inserted;
     // merge partial buffer and keys to be inserted
     merge_and_sort(items_to_be_inserted_shared_mem, number_of_items_to_be_inserted, \
             array_to_be_merged_shared_mem, partial_buffer -> size, merged_array_shared_mem);
     
-    int combined_size = partial_buffer -> size + number_of_items_to_be_inserted;
     if (combined_size >= BATCH_SIZE) {
 
         // copy batch_size into insertion key list
@@ -192,13 +188,12 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
         // update partial buffer size
         if (my_thread_id == MASTER_THREAD)
             partial_buffer -> size = combined_size - BATCH_SIZE;
+        __syncthreads();
     }
     else {
         if (heap -> size == 0) {
             // transfer all keys in partial buffer
             copy_arr1_to_arr2(merged_array_shared_mem, 0, combined_size, partial_buffer -> arr, 0);
-            if (my_thread_id == MASTER_THREAD)
-                partial_buffer -> size = combined_size;
         }
         else {
             // copy partial buffer into shared array
@@ -216,10 +211,12 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
 
             // copy to partial buffer
             copy_arr1_to_arr2(merged_array_shared_mem, BATCH_SIZE, BATCH_SIZE + combined_size, partial_buffer -> arr, 0);
-
-            if (my_thread_id == MASTER_THREAD)
-                partial_buffer -> size = combined_size;
         }
+        if (my_thread_id == MASTER_THREAD)
+            partial_buffer -> size = combined_size;
+
+        __syncthreads();
+
         if (my_thread_id == MASTER_THREAD)
             release_lock(&heap_locks[ROOT_NODE_IDX], INUSE, AVAILABLE);
         return;
@@ -229,28 +226,31 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
         (heap -> size += 1);
     __syncthreads();
 
-    int tar = heap -> size, level = __log2f(tar); // may have floating point error, default to -1
-    // int dummy_tar = tar;
-    // while(dummy_tar) {
-    //     level++;
-    //     dummy_tar >>= 1;
-    // }
+    int tar = heap -> size, level = -1; // may have floating point error, default to -1
+    int dummy_tar = tar;
+    while(dummy_tar) {
+        level++;
+        dummy_tar >>= 1;
+    }
 
     tar = bit_reversal(tar, level);
     
     // take lock on target node 
     if (tar != ROOT_NODE_IDX) {
         if (my_thread_id == MASTER_THREAD) {
-            take_lock(&heap_locks[tar], AVAILABLE, INUSE);
+            take_lock(&heap_locks[tar], AVAILABLE, TARGET);
         }
         __syncthreads();
     }
 
     int low = 0, high = 0, cur = ROOT_NODE_IDX;;
     while (cur != tar) {
-        if (get_lock_state(tar, heap_locks) == MARKED) { // next delete operation can cooperate with current insert operation
-            break;
+        if(my_thread_id == MASTER_THREAD) {
+            if (get_lock_state(tar, heap_locks) == MARKED) { // next delete operation can cooperate with current insert operation
+                break;
+            }
         }
+        __syncthreads();
         
         low = cur * BATCH_SIZE;
         high = low + BATCH_SIZE;
@@ -264,9 +264,9 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
         // copy back to current batch
         copy_arr1_to_arr2(merged_array_shared_mem, 0, BATCH_SIZE, heap -> arr, low);
 
-        __syncthreads();
         // copy to insertion list
         copy_arr1_to_arr2(merged_array_shared_mem, BATCH_SIZE, double_batch_size, items_to_be_inserted_shared_mem, 0);
+        __syncthreads();
 
         cur = tar >> (--level);
 
@@ -280,18 +280,18 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
     }
 
     if(my_thread_id == MASTER_THREAD) {
-        try_lock(&heap_locks[tar], TARGET, INUSE);
-    }
-    __syncthreads();
-    tar = (get_lock_state(tar, heap_locks) == INUSE) ? tar : 1;
-    copy_arr1_to_arr2(items_to_be_inserted_shared_mem, 0, BATCH_SIZE, heap -> arr , tar * BATCH_SIZE);
-
-    if(my_thread_id == MASTER_THREAD) {
+        int tstate = try_lock(&heap_locks[tar], TARGET, INUSE);
+        if(tstate != TARGET)
+            tar = 1;
+        for(int i = 0; i < BATCH_SIZE ; i++)
+            heap -> arr[tar * BATCH_SIZE + i] = items_to_be_inserted_shared_mem[i];
+       
         if(tar != cur) {
             release_lock(&heap_locks[tar], get_lock_state(tar, heap_locks), AVAILABLE);
         }
         release_lock(&heap_locks[cur], INUSE, AVAILABLE);
     }
+    __syncthreads();
 }
 
 __global__ void td_delete(int *items_deleted, int *heap_locks, Partial_Buffer *partial_buffer, Heap *heap, int my_id) {
@@ -310,18 +310,16 @@ __global__ void td_delete(int *items_deleted, int *heap_locks, Partial_Buffer *p
         while(atomicCAS(&(heap -> global_id), my_id, 0) != my_id);
         take_lock(&heap_locks[ROOT_NODE_IDX], AVAILABLE, INUSE);
         heap -> global_id = my_id + 1;
-        // printf("%d \n", my_id);
     }
     __syncthreads();
 
     // heap is empty
     if (heap -> size == 0) {
         if (partial_buffer -> size != 0) {
-            copy_arr1_to_arr2(partial_buffer -> arr, 0, partial_buffer -> size, items_deleted + (heap -> global_idx) * BATCH_SIZE, 0);
+            copy_arr1_to_arr2(partial_buffer -> arr, 0, partial_buffer -> size, items_deleted, 0);
             __syncthreads();
             if(my_thread_id == MASTER_THREAD) {
                 partial_buffer -> size = 0;
-                heap -> global_idx += 1;
             }
             __syncthreads();
         }
@@ -335,11 +333,7 @@ __global__ void td_delete(int *items_deleted, int *heap_locks, Partial_Buffer *p
     // copy root into shared mem arr1 to be used now and later too
     copy_arr1_to_arr2(heap -> arr, ROOT_NODE_IDX * BATCH_SIZE, ROOT_NODE_IDX * BATCH_SIZE + BATCH_SIZE, arr1_shared_mem, 0);
     // copy root node into list of deleted mem
-    copy_arr1_to_arr2(arr1_shared_mem, 0, BATCH_SIZE, items_deleted, heap -> global_idx * BATCH_SIZE);
-    __syncthreads();
-    if(my_thread_id == MASTER_THREAD) {
-        heap -> global_idx += 1;
-    }
+    copy_arr1_to_arr2(arr1_shared_mem, 0, BATCH_SIZE, items_deleted, 0);
     __syncthreads();
     int tar = heap -> size;
 
@@ -492,4 +486,47 @@ __host__ void heap_init() {
 
     gpuErrchk( cudaMalloc((void**)&d_heap_locks, NUMBER_OF_NODES * sizeof(int)) );
     gpuErrchk( cudaMemset(d_heap_locks, AVAILABLE, NUMBER_OF_NODES * sizeof(int)) );
+}
+
+
+
+__device__ int binary_search_test(int *arr1, int high, int search, bool consider_equality) {
+    int low = 0, mid = 0;
+    int ans = high;
+    if(high == 0) return 0;
+    while (low <= high)
+    {
+        mid = (low + high) >> 1;
+        if (arr1[mid] >= search and consider_equality) {
+            ans = mid;
+            high = mid - 1;
+        }
+        else if (arr1[mid] > search) {
+            ans = mid;
+            high = mid - 1;
+        }
+        else
+            low = mid + 1;
+    }
+    return ans;
+}
+__global__ void merge_and_sort_cpu_test(int *arr1, int idx1, int *arr2, int idx2, int *merged_arr) {
+    int my_thread_id = threadIdx.x + blockIdx.x * blockDim.x;
+
+    if (my_thread_id < idx1) {
+        int x = binary_search_test(arr2, idx2, arr1[my_thread_id], 1);
+        printf("%d %d %d\n", my_thread_id, x, arr1[my_thread_id]);
+        merged_arr[my_thread_id + x ] = arr1[my_thread_id];
+    }
+    __syncthreads();
+
+    if (my_thread_id < idx2) {
+        int x = binary_search_test(arr1, idx1, arr2[my_thread_id], 0);
+        // printf("%d", my_thread_id);
+        merged_arr[my_thread_id + x] = arr2[my_thread_id];
+        printf("%d %d\n", my_thread_id, merged_arr[my_thread_id]);
+    }
+
+    __syncthreads();
+    
 }

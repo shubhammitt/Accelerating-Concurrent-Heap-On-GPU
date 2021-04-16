@@ -2,6 +2,12 @@
 #include "sequential_heap.h"
 #include <bits/stdc++.h>
 #include <ctime>
+
+
+int arr[HEAP_CAPACITY];
+int received_arr[HEAP_CAPACITY];
+Heap *b = (Heap*)malloc(sizeof(Heap));
+
 // void test_sort()
 // {
 //     int n = min(BATCH_SIZE, 16);
@@ -31,55 +37,74 @@
 
 // }
 
-// void test_merge()
-// {
-//     //  batchsize = 512 for this to work
-//     int n = min(BATCH_SIZE, 128);
-//     int h_arr[2*n];
-//     int h_arr2[2*n];
-//     int arr[2*n];
-//     for(int i = 0 ; i < n ; i++)
-//     {
-//         h_arr[i] = arr[i] = rand() % 10;
-//         h_arr2[i] = arr[i + n] = rand() % 10;
-
-//     }
-//     for(int i = 0 ;i < n ;i++)
-//         cout << h_arr[i] << " " << h_arr2[i]<<"\n";
-//     cout << "\n";
-//     n = 2*n;
-//     sort(arr, arr + n);
+void test_merge()
+{
+    int n = 0;
+    int m = 2;
+    int total = n + m;
+    int x = 10000;
+    int h_arr1[n], h_arr2[m], h_arr3[n + m];
+    int verify[n + m];
+    int c = 0;
+    for(int i = 0 ; i < n ; i++) {
+        h_arr1[i] = rand() % x;
+    }
     
-//     int *d_arr; int *d_arr2;
-//     gpuErrchk( cudaMalloc((void**)&d_arr, n * sizeof(int)));
-//     gpuErrchk( cudaMemcpy(d_arr, h_arr, n * sizeof(int), cudaMemcpyHostToDevice));
-//     gpuErrchk( cudaMalloc((void**)&d_arr2, n * sizeof(int)));
-//     gpuErrchk( cudaMemcpy(d_arr2, h_arr2, n * sizeof(int), cudaMemcpyHostToDevice));
-//     td_insertion<<<1, BLOCK_SIZE>>>(d_arr, n >> 1, d_heap_locks, d_partial_buffer, d_heap);
-//     td_insertion<<<1, BLOCK_SIZE>>>(d_arr2, n >> 1, d_heap_locks, d_partial_buffer, d_heap);
-    
-//     gpuErrchk( cudaPeekAtLastError() );
-//     gpuErrchk( cudaDeviceSynchronize() );
-//     gpuErrchk( cudaMemcpy(h_arr2, d_arr2, n * sizeof(int), cudaMemcpyDeviceToHost));
-//     for(int i = 0 ;i < n ;i++)
-//         cout << h_arr2[i] << " " << arr[i]<<"\n";
-//     cout << "\n";
-//     bool correct = 1;
-//     for(int i = 0 ; i < n ; i++)
-//         if(arr[i] != h_arr2[i])
-//         correct = 0;
-//     cout << ((correct)?"Success\n":"Failed!\n");
-// }
 
-int arr[HEAP_CAPACITY];
-int received_arr[HEAP_CAPACITY];
-Heap *b = (Heap*)malloc(sizeof(Heap));
+    for(int i = 0 ; i < m ; i++) {
+        h_arr2[i] = rand() % x;
+    }
+    sort(h_arr2, h_arr2 + m);
+    sort(h_arr1, h_arr1 + n);
+    for(int i = 0 ; i < n ; i++) {
+        verify[c++] = h_arr1[i];
+    }
+    
+
+    for(int i = 0 ; i < m ; i++) {
+        verify[c++] = h_arr2[i];
+    }
+
+    int *d_arr1, *d_arr2, *d_arr3;
+    gpuErrchk( cudaMalloc((void**)&d_arr1, n * sizeof(int)));
+    gpuErrchk( cudaMemcpy(d_arr1, h_arr1 , n * sizeof(int), cudaMemcpyHostToDevice)); 
+    gpuErrchk( cudaMalloc((void**)&d_arr2, m * sizeof(int)));
+    gpuErrchk( cudaMemcpy(d_arr2, h_arr2 , m * sizeof(int), cudaMemcpyHostToDevice)); 
+    gpuErrchk( cudaMalloc((void**)&d_arr3, total * sizeof(int)));
+
+    int num_thread_per_block = 1024;
+    int number_of_blocks = (total / num_thread_per_block) + 1;
+    merge_and_sort_cpu_test<<<number_of_blocks, num_thread_per_block>>>(d_arr1, n, d_arr2, m, d_arr3);
+    cudaDeviceSynchronize();
+    gpuErrchk( cudaMemcpy(h_arr3, d_arr3, total * sizeof(int), cudaMemcpyDeviceToHost));
+    
+    // for(int i = 0 ; i < total ; i++) {
+    //     cout << verify[i] << " ";
+    // }
+    // cout << "\n";
+    sort(verify, verify + total);
+    bool correct = 1;
+    for(int i = 0; i < total ; i++)
+        if(h_arr3[i] != verify[i]) {
+            correct = 0;
+            // cout << i << " " <<h_arr3[i] << " " << verify[i] << "\n";
+            // break;
+        }
+
+    cout << ((correct)?"Success\n":"Failed!\n");
+
+}
 
 void test_insertion()
 {
-    int n = HEAP_CAPACITY / BATCH_SIZE;
+    int n = 60000;
+    n = NUMBER_OF_NODES - 1;
+    cout << n<<"\n";
     for(int i = 0 ; i < HEAP_CAPACITY; i++)
-        arr[i] = rand() % 90000000 + 10;
+        arr[i] = rand() % 100000 + 10;
+    // for(int i = 1 ; i < n; i++)
+    //     cout << arr[i] << " ";
+    //     cout << "\n";
     long double total_time = 0;
     int number_of_streams = 20;
     cudaStream_t stream[number_of_streams];
@@ -92,6 +117,7 @@ void test_insertion()
     std::clock_t c_start = std::clock();
     for(int i = 1; i <n  ; i++)
     {
+        // cudaDeviceSynchronize();
         td_insertion<<<1, BLOCK_SIZE,0, stream[i%(number_of_streams - 1) + 1]>>>(d_arr + i*BATCH_SIZE, BATCH_SIZE, d_heap_locks, d_partial_buffer, d_heap, i);
     }
     gpuErrchk( cudaPeekAtLastError() );
@@ -136,12 +162,15 @@ void test_insertion()
 
     gpuErrchk( cudaMemcpy(b, d_heap, sizeof(Heap), cudaMemcpyDeviceToHost));
     sort(arr + BATCH_SIZE, arr + n*BATCH_SIZE);
-    // for(int i = BATCH_SIZE ; i < 2*BATCH_SIZE ; i++)
+    // for(int i = 1 ; i < n ; i++)
     //     cout << arr[i] << " " << b ->arr[i] << "\n";
     bool correct = 1;
     for(int i = BATCH_SIZE ; i < 2*BATCH_SIZE ; i++)
-        if (arr[i] != b->arr[i] or my_heap.pop() != arr[i])
+        if (arr[i] != b->arr[i] or my_heap.pop() != arr[i]){
+            cout << arr[i] << " " << b -> arr[i] << " ";
             correct = 0;
+            // break;
+        }
     
     for(int i = 1 ; i < n; i++)
     {
@@ -163,10 +192,12 @@ void test_insertion()
         }
         
     }
-    sort(b->arr + BATCH_SIZE, b->arr + n*BATCH_SIZE);
+    sort(b->arr + BATCH_SIZE, b->arr + HEAP_CAPACITY);
     for(int i = BATCH_SIZE ; i < n * BATCH_SIZE ; i++)
-        if(b->arr[i] != arr[i])
+        if(b->arr[i] != arr[i]) {
+            cout << i << " "<< arr[i] << " " << b -> arr[i] << "\n";
             correct=0;
+        }
 
 
     cout << ((correct)?"Success\n":"Failed!\n");
@@ -178,11 +209,11 @@ void test_deletion() {
     // n = NUMBER_OF_NODES - 1;
     cout<<n<<"\n";
     for(int i = 0 ; i < HEAP_CAPACITY; i++)
-        arr[i] = rand() % 9000000 + 10;
+        arr[i] = rand() % 900000 + 10;
     // for(int i = 1 ; i < n ; i++)
     // cout << arr[i] << " ";cout << "\n";
     long double total_time = 0;
-    int number_of_streams = 20;
+    int number_of_streams = 30;
     cudaStream_t stream[number_of_streams];
     for(int i = 1 ; i < number_of_streams ; i++)
         cudaStreamCreateWithFlags(&(stream[i]), cudaStreamNonBlocking);
@@ -198,9 +229,9 @@ void test_deletion() {
     }
     // gpuErrchk( cudaPeekAtLastError() );
     // gpuErrchk( cudaDeviceSynchronize() );
-
+    // cudaDeviceSynchronize();
     for(int i = 1 ; i < n; i++) {
-        td_delete<<<1, BLOCK_SIZE,0, stream[i%(number_of_streams - 1) + 1]>>>(d_arr, d_heap_locks, d_partial_buffer, d_heap, c++);
+        td_delete<<<1, BLOCK_SIZE,0, stream[i%(number_of_streams - 1) + 1]>>>(d_arr + i*BATCH_SIZE, d_heap_locks, d_partial_buffer, d_heap, c++);
         // gpuErrchk( cudaPeekAtLastError() );
         // gpuErrchk( cudaDeviceSynchronize() );
     }
@@ -263,8 +294,10 @@ int main()
 {
     heap_init();
     // srand(0);
-    // srand(time(NULL));
+    srand(time(NULL));
  
     // test_insertion();
     test_deletion();
+    // test_merge();
+    
 }

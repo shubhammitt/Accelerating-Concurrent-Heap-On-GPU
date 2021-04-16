@@ -39,7 +39,6 @@ struct Heap
 {
     int size = 0;
     int global_id = 1;
-    int global_idx = 1;
     int arr[HEAP_CAPACITY];
 };
 
@@ -69,3 +68,6 @@ __device__ void merge_and_sort(int *arr1, int idx1, int *arr2, int idx2, int *me
 __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_be_inserted, int *heap_locks, Partial_Buffer *partial_buffer, Heap *heap, int my_id);
 __global__ void td_delete(int *items_deleted, int *heap_locks, Partial_Buffer *partial_buffer, Heap *heap, int my_id);
 __host__ void heap_init();
+
+
+__global__ void merge_and_sort_cpu_test(int *arr1, int idx1, int *arr2, int idx2, int *merged_arr);
