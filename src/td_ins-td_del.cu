@@ -331,61 +331,52 @@ __global__ void td_delete(int *items_deleted, int *heap_locks, Partial_Buffer *p
     }
 
     // copy root into shared mem arr1 to be used now and later too
-    copy_arr1_to_arr2(heap -> arr, ROOT_NODE_IDX * BATCH_SIZE, ROOT_NODE_IDX * BATCH_SIZE + BATCH_SIZE, arr1_shared_mem, 0);
-    // copy root node into list of deleted mem
-    copy_arr1_to_arr2(arr1_shared_mem, 0, BATCH_SIZE, items_deleted, 0);
+    copy_arr1_to_arr2(heap -> arr, ROOT_NODE_IDX * BATCH_SIZE, ROOT_NODE_IDX * BATCH_SIZE + BATCH_SIZE, items_deleted, 0);
     __syncthreads();
-    int tar = heap -> size;
 
-    if (tar == 1) { // WARNING: not written in pseudocode
-        if (partial_buffer -> size == 0) {
-            if (my_thread_id == MASTER_THREAD)
-                heap -> size = 0;
-        }
-        else {
-            copy_arr1_to_arr2(partial_buffer -> arr, 0 , partial_buffer -> size, heap -> arr, ROOT_NODE_IDX * BATCH_SIZE);
-            __syncthreads();
-            partial_buffer -> size = 0;
-        }
-        if(my_thread_id == MASTER_THREAD) {
-            release_lock(&heap_locks[ROOT_NODE_IDX], INUSE, AVAILABLE);
-        }
+    int tar = heap -> size, level = -1; // may have floating point error, default to -1
+    int dummy_tar = tar;
+    while(dummy_tar) {
+        level++;
+        dummy_tar >>= 1;
+    }
+    tar = bit_reversal(tar, level);
+
+    __syncthreads(); // necessary so that master thread do not decrement while other threads are initialising tar
+    if (my_thread_id == MASTER_THREAD) {
+        heap -> size -= 1;
+    }
+
+    __syncthreads();
+
+    if(tar == 1) {
+        memset_arr(heap -> arr, ROOT_NODE_IDX * BATCH_SIZE, ROOT_NODE_IDX * BATCH_SIZE + BATCH_SIZE);
         __syncthreads();
+        if(my_thread_id == MASTER_THREAD)
+            release_lock(&heap_locks[ROOT_NODE_IDX], INUSE, AVAILABLE);
         return; 
     }
 
-    int level = __log2f(tar);
-    tar = bit_reversal(tar, level);
-    int cur = 1;
-    
     if (my_thread_id == MASTER_THREAD) {
-        try_lock(&heap_locks[tar], TARGET, MARKED);
-    } 
-
-    __syncthreads(); // necessary so that master thread do not decrement while other threads are initialising tar
-    if (my_thread_id == MASTER_THREAD)
-        heap -> size -= 1;
-    
-
-    if (get_lock_state(tar, heap_locks) == MARKED) {
-        while(get_lock_state(tar, heap_locks) != AVAILABLE);
-    }
-    else {
-        if (my_thread_id == MASTER_THREAD) {
-            take_lock(&heap_locks[tar], AVAILABLE, INUSE);
+        int tstate = try_lock(&heap_locks[tar], TARGET, MARKED);
+        if(tstate == TARGET) { // Warning: written Marked
+            while(get_lock_state(tar, heap_locks) != AVAILABLE);
         }
-        __syncthreads();
-        // root node elements are already copied in arr1
-        copy_arr1_to_arr2(heap -> arr, tar * BATCH_SIZE, (tar + 1) * BATCH_SIZE, arr1_shared_mem, 0);
-        __syncthreads();
-        memset_arr(heap -> arr, tar * BATCH_SIZE, (tar + 1) * BATCH_SIZE, INT_MAX);
-        __syncthreads();
-
-        if (my_thread_id == MASTER_THREAD) {
+        else {
+            take_lock(&heap_locks[tar], AVAILABLE, INUSE);
+            // root node elements are already copied in arr1
+            for(int i = 0 ; i < BATCH_SIZE ; i++) {
+                heap -> arr[ROOT_NODE_IDX * BATCH_SIZE + i] = heap -> arr[tar * BATCH_SIZE + i];
+                heap -> arr[tar * BATCH_SIZE + i] = INT_MAX;
+                
+            }
+            // for(int i = 1; i <= 3; i++)
+            //     printf("%d %d\n", my_id, heap -> arr[i]);
             release_lock(&heap_locks[tar], INUSE, AVAILABLE);
-        }        
+        }
     }
-
+    __syncthreads();
+    copy_arr1_to_arr2(heap -> arr, ROOT_NODE_IDX * BATCH_SIZE, ROOT_NODE_IDX * BATCH_SIZE + BATCH_SIZE, arr1_shared_mem, 0);
     // copy partial buffer in arr2_shared mem
     copy_arr1_to_arr2(partial_buffer -> arr, 0, partial_buffer -> size, arr2_shared_mem, 0);
     __syncthreads();
@@ -398,12 +389,14 @@ __global__ void td_delete(int *items_deleted, int *heap_locks, Partial_Buffer *p
 
     // copy back to arr1
     copy_arr1_to_arr2(merged_array_shared_mem, 0, BATCH_SIZE, arr1_shared_mem, 0);
+    __syncthreads();
 
-    int left = 0, right = 0;
+    int left = 0, right = 0, cur = 1;
     int largest_left = 0, largest_right = 0;
     while(1) {
         
         if((cur << 1) >= NUMBER_OF_NODES) {
+            // Warning: it will impact due to bit reversal, need to handle left and right child
             break; // same code after while loop
         }
 
@@ -472,6 +465,9 @@ __global__ void td_delete(int *items_deleted, int *heap_locks, Partial_Buffer *p
     __syncthreads();
 
     if(my_thread_id == MASTER_THREAD) {
+        // for(int i = 1; i <= 30; i++)
+        //     printf("%d ", heap -> arr[i]);
+        // printf("\nmyid %d\n", my_id);
         release_lock(&heap_locks[cur], INUSE, AVAILABLE);
     }
 

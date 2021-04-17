@@ -206,10 +206,10 @@ void test_insertion()
 void test_deletion() {
 
     int n = 60000;
-    // n = NUMBER_OF_NODES - 1;
+    n = NUMBER_OF_NODES - 1;
     cout<<n<<"\n";
     for(int i = 0 ; i < HEAP_CAPACITY; i++)
-        arr[i] = rand() % 900000 + 10;
+        arr[i] = rand() % 5000000+ 10;
     // for(int i = 1 ; i < n ; i++)
     // cout << arr[i] << " ";cout << "\n";
     long double total_time = 0;
@@ -220,6 +220,9 @@ void test_deletion() {
     int *d_arr;
     gpuErrchk( cudaMalloc((void**)&d_arr, HEAP_CAPACITY * sizeof(int)));
     gpuErrchk( cudaMemcpy(d_arr, (arr) , HEAP_CAPACITY * sizeof(int), cudaMemcpyHostToDevice)); 
+
+    int *d_arr_rec;
+    gpuErrchk( cudaMalloc((void**)&d_arr_rec, HEAP_CAPACITY * sizeof(int)));
     cudaDeviceSynchronize();
     int c = 1;
     std::clock_t c_start = std::clock();
@@ -229,9 +232,9 @@ void test_deletion() {
     }
     // gpuErrchk( cudaPeekAtLastError() );
     // gpuErrchk( cudaDeviceSynchronize() );
-    // cudaDeviceSynchronize();
+    cudaDeviceSynchronize();
     for(int i = 1 ; i < n; i++) {
-        td_delete<<<1, BLOCK_SIZE,0, stream[i%(number_of_streams - 1) + 1]>>>(d_arr + i*BATCH_SIZE, d_heap_locks, d_partial_buffer, d_heap, c++);
+        td_delete<<<1, BLOCK_SIZE,0, stream[i%(number_of_streams - 1) + 1]>>>(d_arr_rec + i*BATCH_SIZE, d_heap_locks, d_partial_buffer, d_heap, c++);
         // gpuErrchk( cudaPeekAtLastError() );
         // gpuErrchk( cudaDeviceSynchronize() );
     }
@@ -274,16 +277,16 @@ void test_deletion() {
     time_elapsed_ms = 1000.0 * (c_end-c_start) / CLOCKS_PER_SEC;
     std::cout << "CPU my heap time used: " << time_elapsed_ms << " ms\n";
 
-    gpuErrchk( cudaMemcpy(received_arr, d_arr, HEAP_CAPACITY * sizeof(int), cudaMemcpyDeviceToHost));
+    gpuErrchk( cudaMemcpy(received_arr, d_arr_rec, HEAP_CAPACITY * sizeof(int), cudaMemcpyDeviceToHost));
     sort(arr + BATCH_SIZE, arr + n * BATCH_SIZE);
-    // for(int i = BATCH_SIZE ; i < 2*BATCH_SIZE ; i++)
-    //     cout << arr[i] << " " << b ->arr[i] << "\n";
+    // for(int i = 1 ; i < 4 ; i++)
+    //     cout << received_arr[i] << " " << b ->arr[i] << "\n";
     bool correct = 1;
     for(int i = BATCH_SIZE ; i < n*BATCH_SIZE ; i++) {
         if (arr[i] != received_arr[i]) {
             correct = 0;
             cout << arr[i] << " " << received_arr[i] << " " << i << "\n";
-            break;
+            // break;
         }
     }
 
