@@ -2,7 +2,7 @@
 #include "sequential_heap.h"
 #include <bits/stdc++.h>
 #include <ctime>
-
+#include<assert.h>
 
 int arr[HEAP_CAPACITY];
 int received_arr[HEAP_CAPACITY];
@@ -233,6 +233,12 @@ void test_deletion() {
     // gpuErrchk( cudaPeekAtLastError() );
     // gpuErrchk( cudaDeviceSynchronize() );
     cudaDeviceSynchronize();
+
+    // gpuErrchk( cudaMemcpy(b, d_heap, sizeof(Heap), cudaMemcpyDeviceToHost));
+    // for(int i = 0 ; i < HEAP_CAPACITY ; i++) {
+    //     assert(b->arr[i] != -1);
+    // }
+    // printf("Fine");
     for(int i = 1 ; i < n; i++) {
         td_delete<<<1, BLOCK_SIZE,0, stream[i%(number_of_streams - 1) + 1]>>>(d_arr_rec + i*BATCH_SIZE, d_heap_locks, d_partial_buffer, d_heap, c++);
         // gpuErrchk( cudaPeekAtLastError() );
