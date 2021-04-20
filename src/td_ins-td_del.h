@@ -71,3 +71,5 @@ __host__ void heap_init();
 
 
 __global__ void merge_and_sort_cpu_test(int *arr1, int idx1, int *arr2, int idx2, int *merged_arr);
+
+__device__ void memset_arr(volatile int *arr, int from_arr_idx1, int to_arr_idx2, int val);

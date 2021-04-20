@@ -59,7 +59,7 @@ void test_merge()
     for(int i = 0 ; i < n ; i++) {
         verify[c++] = h_arr1[i];
     }
-    
+
 
     for(int i = 0 ; i < m ; i++) {
         verify[c++] = h_arr2[i];
@@ -106,7 +106,7 @@ void test_insertion()
     //     cout << arr[i] << " ";
     //     cout << "\n";
     long double total_time = 0;
-    int number_of_streams = 20;
+    int number_of_streams = 100;
     cudaStream_t stream[number_of_streams];
     for(int i = 1 ; i < number_of_streams ; i++)
         cudaStreamCreateWithFlags(&(stream[i]), cudaStreamNonBlocking);
@@ -126,15 +126,15 @@ void test_insertion()
     long double time_elapsed_ms = 1000.0 * (c_end-c_start) / CLOCKS_PER_SEC;
     std::cout << "GPU time used: " << time_elapsed_ms << " ms\n";
 
-    priority_queue<int> pq;
+    // priority_queue<int> pq;
     c_start = std::clock();
-    for(int i = 1; i < n ; i++)
-    {
-        for(int j = i * BATCH_SIZE; j < (i+1) * BATCH_SIZE ; j++)
-        {
-            pq.push(arr[j]);
-        }
-    }
+    // for(int i = 1; i < n ; i++)
+    // {
+    //     for(int j = i * BATCH_SIZE; j < (i+1) * BATCH_SIZE ; j++)
+    //     {
+    //         pq.push(arr[j]);
+    //     }
+    // }
     // while(pq.size()!=0) {
     //     pq.pop();
     // }
@@ -142,17 +142,17 @@ void test_insertion()
     time_elapsed_ms = 1000.0 * (c_end-c_start) / CLOCKS_PER_SEC;
     std::cout << "CPU-STL time used: " << time_elapsed_ms << " ms\n";
 
-    CPU_Heap my_heap(HEAP_CAPACITY);
+    // CPU_Heap my_heap(HEAP_CAPACITY);
     c_start = std::clock();
     int c = 0;
-    for(int i = 1; i < n ; i++)
-    {
-        for(int j = i * BATCH_SIZE; j < (i+1) * BATCH_SIZE ; j++)
-        {
-            c++;
-            my_heap.push(arr[j]);
-        }
-    }
+    // for(int i = 1; i < n ; i++)
+    // {
+    //     for(int j = i * BATCH_SIZE; j < (i+1) * BATCH_SIZE ; j++)
+    //     {
+    //         c++;
+    //         my_heap.push(arr[j]);
+    //     }
+    // }
     // while(pq.size()!=0) {
     //     pq.pop();
     // }
@@ -166,7 +166,7 @@ void test_insertion()
     //     cout << arr[i] << " " << b ->arr[i] << "\n";
     bool correct = 1;
     for(int i = BATCH_SIZE ; i < 2*BATCH_SIZE ; i++)
-        if (arr[i] != b->arr[i] or my_heap.pop() != arr[i]){
+        if (arr[i] != b->arr[i]){
             cout << arr[i] << " " << b -> arr[i] << " ";
             correct = 0;
             // break;
@@ -253,13 +253,13 @@ void test_deletion() {
 
     priority_queue<int> pq;
     c_start = std::clock();
-    for(int i = 1; i < n ; i++)
-    {
-        for(int j = i * BATCH_SIZE; j < (i+1) * BATCH_SIZE ; j++)
-        {
-            pq.push(arr[j]);
-        }
-    }
+    // for(int i = 1; i < n ; i++)
+    // {
+    //     for(int j = i * BATCH_SIZE; j < (i+1) * BATCH_SIZE ; j++)
+    //     {
+    //         pq.push(arr[j]);
+    //     }
+    // }
     // while(pq.size()!=0) {
     //     pq.pop();
     // }
@@ -269,13 +269,13 @@ void test_deletion() {
 
     CPU_Heap my_heap(HEAP_CAPACITY);
     c_start = std::clock();
-    for(int i = 1; i < n ; i++)
-    {
-        for(int j = i * BATCH_SIZE; j < (i+1) * BATCH_SIZE ; j++)
-        {
-            my_heap.push(arr[j]);
-        }
-    }
+    // for(int i = 1; i < n ; i++)
+    // {
+    //     for(int j = i * BATCH_SIZE; j < (i+1) * BATCH_SIZE ; j++)
+    //     {
+    //         my_heap.push(arr[j]);
+    //     }
+    // }
     // while(not my_heap.is_empty()) {
     //     my_heap.pop();
     // }
