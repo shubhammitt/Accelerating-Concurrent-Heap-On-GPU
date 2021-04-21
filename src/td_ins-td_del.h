@@ -15,6 +15,8 @@ using namespace std;
 #define HEAP_CAPACITY (NUMBER_OF_NODES) * (BATCH_SIZE)
 #define ROOT_NODE_IDX 1
 #define MASTER_THREAD 0
+// should be <= 20, depends on the number of SMs in a GPU
+#define NUMBER_OF_CUDA_STREAMS 16
 
 enum LOCK_STATES {AVAILABLE, INUSE, TARGET, MARKED};
 
@@ -48,6 +50,9 @@ struct Heap
 inline Heap *d_heap;
 inline Partial_Buffer *d_partial_buffer;
 inline int *d_heap_locks;
+inline cudaStream_t stream[NUMBER_OF_CUDA_STREAMS];
+inline int kernel_id = 1;
+inline int stream_id = 0;
 
 #endif
 
@@ -68,8 +73,8 @@ __device__ void merge_and_sort(int *arr1, int idx1, int *arr2, int idx2, int *me
 __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_be_inserted, int *heap_locks, Partial_Buffer *partial_buffer, Heap *heap, int my_id);
 __global__ void td_delete(int *items_deleted, int *heap_locks, Partial_Buffer *partial_buffer, Heap *heap, int my_id);
 __host__ void heap_init();
-
-
-__global__ void merge_and_sort_cpu_test(int *arr1, int idx1, int *arr2, int idx2, int *merged_arr);
-
-__device__ void memset_arr(volatile int *arr, int from_arr_idx1, int to_arr_idx2, int val);
+__host__ void insert_keys(int *items_to_be_inserted, int total_num_of_keys_insertion);
+__host__ void delete_keys(int *items_to_be_deleted);
+int get_kernel_id();
+void next_stream_id();
+cudaStream_t get_current_stream();

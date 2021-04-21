@@ -28,12 +28,17 @@ __device__ void release_lock(int *lock, int lock_state_1, int lock_state_2) {
 
 __global__ void heap_init(Heap *heap, Partial_Buffer *partial_buffer) {
     int index = threadIdx.x + blockDim.x * blockIdx.x;
-    heap -> global_id = 1;
-    heap -> size = 0;
-    partial_buffer -> size = 0;
+    
+    if(index == 0) {
+        heap -> global_id = 1;
+        heap -> size = 0;
+        partial_buffer -> size = 0;
+    }
+
     if (index < HEAP_CAPACITY) {
         heap -> arr[index] = INT_MAX;
     }
+
     if (index < PARTIAL_BUFFER_CAPACITY) {
         partial_buffer -> arr[index] = INT_MAX;   
     }
@@ -60,29 +65,6 @@ __device__ void copy_arr1_to_arr2(int *arr1, int from_arr1_idx1, int to_arr1_idx
     }
 }
 
-__device__ void copy_arr1_to_arr2(volatile int *arr1, int from_arr1_idx1, int to_arr1_idx2, int *arr2, int from_arr2_idx1) {
-    int my_thread_id = threadIdx.x;
-    int n = to_arr1_idx2 - from_arr1_idx1;
-    if (my_thread_id < n) {
-        arr2[from_arr2_idx1 + my_thread_id] = arr1[from_arr1_idx1 + my_thread_id];
-    }
-}
-
-__device__ void copy_arr1_to_arr2(int *arr1, int from_arr1_idx1, int to_arr1_idx2,volatile int *arr2, int from_arr2_idx1) {
-    int my_thread_id = threadIdx.x;
-    int n = to_arr1_idx2 - from_arr1_idx1;
-    if (my_thread_id < n) {
-        arr2[from_arr2_idx1 + my_thread_id] = arr1[from_arr1_idx1 + my_thread_id];
-    }
-}
-
-__device__ void copy_arr1_to_arr2(volatile int *arr1, int from_arr1_idx1, int to_arr1_idx2,volatile int *arr2, int from_arr2_idx1) {
-    int my_thread_id = threadIdx.x;
-    int n = to_arr1_idx2 - from_arr1_idx1;
-    if (my_thread_id < n) {
-        arr2[from_arr2_idx1 + my_thread_id] = arr1[from_arr1_idx1 + my_thread_id];
-    }
-}
 
 __device__ void memset_arr(int *arr, int from_arr_idx1, int to_arr_idx2, int val) {
     int my_thread_id = threadIdx.x;
@@ -93,47 +75,7 @@ __device__ void memset_arr(int *arr, int from_arr_idx1, int to_arr_idx2, int val
     __syncthreads();
 }
 
-__device__ void memset_arr(volatile int *arr, int from_arr_idx1, int to_arr_idx2, int val) {
-    int my_thread_id = threadIdx.x;
-    int n = to_arr_idx2 - from_arr_idx1;
-    if (my_thread_id < n) {
-        arr[from_arr_idx1 + my_thread_id] = val;
-    }
-    __syncthreads();
-}
-
-
 __device__ void bitonic_sort(int *arr, int size) {
-    // assuming size = power of 2
-    int my_thread_id = threadIdx.x;
-    int maximum = 0, minimum = 0, other_idx = 0, i = 2, j = 2;
-    // parity of batch number will tell which operation to perform in that batch:
-    // min/max for even/odd respectively
-    int my_batch_number = my_thread_id >> 1;
-    for (i = 2; i <= size ; i <<= 1, my_batch_number >>= 1) {
-        for (j = i; j >= 2 ; j >>= 1) {
-            int steps_to_look_ahead = j >> 1;
-            // only first half of any batch can be active
-            if ((my_thread_id % j < steps_to_look_ahead) && (my_thread_id < size)) 
-            {
-                other_idx = my_thread_id + steps_to_look_ahead;
-                minimum = min(arr[my_thread_id], arr[other_idx]);
-                maximum = max(arr[my_thread_id], arr[other_idx]); // chances of improvement by using minimum to find max
-                if (my_batch_number & 1) {
-                    arr[my_thread_id] = maximum;
-                    arr[other_idx] = minimum;
-                }
-                else {
-                    arr[my_thread_id] = minimum;
-                    arr[other_idx] = maximum;
-                }
-            }
-            __syncthreads();
-        }
-    }
-}
-
-__device__ void bitonic_sort(volatile int *arr, int size) {
     // assuming size = power of 2
     int my_thread_id = threadIdx.x;
     int maximum = 0, minimum = 0, other_idx = 0, i = 2, j = 2;
@@ -187,52 +129,7 @@ __device__ int binary_search(int *arr1, int high, int search, bool consider_equa
 }
 
 
-__device__ int binary_search(volatile int *arr1, int high, int search, bool consider_equality) {
-    if(high == 0) return 0;
-    
-    int low = 0, mid = 0;
-    int ans = high;
-    while (low <= high)
-    {
-        mid = (low + high) >> 1;
-        if (arr1[mid] >= search and consider_equality) {
-            ans = min(ans, mid);
-            high = mid - 1;
-        }
-        else if (arr1[mid] > search) {
-            ans = min(ans, mid);
-            high = mid - 1;
-        }
-        else
-            low = mid + 1;
-    }
-    return ans;
-}
-
-
 __device__ void merge_and_sort(int *arr1, int idx1, int *arr2, int idx2, int *merged_arr) {
-    int my_thread_id = threadIdx.x;
-    int y = -1;
-    if(my_thread_id < BATCH_SIZE) {
-        merged_arr[my_thread_id] = y;
-        merged_arr[my_thread_id + BATCH_SIZE] = y;
-    }
-    __syncthreads();
-
-    if (my_thread_id < idx1) {
-        int x = binary_search(arr2, idx2, arr1[my_thread_id], 1);
-        merged_arr[my_thread_id + x] = arr1[my_thread_id];
-    }
-
-    if (my_thread_id < idx2) {
-        int x = binary_search(arr1, idx1, arr2[my_thread_id], 0);
-        merged_arr[my_thread_id + x] = arr2[my_thread_id];
-    }
-    __syncthreads();
-    
-}
-
-__device__ void merge_and_sort(volatile int *arr1, int idx1,volatile int *arr2, int idx2, volatile int *merged_arr) {
     int my_thread_id = threadIdx.x;
     int y = -1;
     if(my_thread_id < BATCH_SIZE) {
@@ -269,9 +166,9 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
     __syncthreads();
 
     const int double_batch_size = BATCH_SIZE << 1;
-    volatile __shared__ int items_to_be_inserted_shared_mem[BATCH_SIZE];
-    volatile __shared__ int array_to_be_merged_shared_mem[BATCH_SIZE];
-    volatile __shared__ int merged_array_shared_mem[double_batch_size];
+    __shared__ int items_to_be_inserted_shared_mem[BATCH_SIZE];
+    __shared__ int array_to_be_merged_shared_mem[BATCH_SIZE];
+    __shared__ int merged_array_shared_mem[double_batch_size];
 
     memset_arr(items_to_be_inserted_shared_mem, 0, BATCH_SIZE, INT_MAX);
     memset_arr(array_to_be_merged_shared_mem, 0, BATCH_SIZE, INT_MAX);
@@ -403,6 +300,7 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
     if(my_thread_id == MASTER_THREAD) {
         release_lock(&heap_locks[tar], INUSE, AVAILABLE);
     }
+    __syncthreads();
 }
 
 __global__ void td_delete(int *items_deleted, int *heap_locks, Partial_Buffer *partial_buffer, Heap *heap, int my_id) {
@@ -411,17 +309,19 @@ __global__ void td_delete(int *items_deleted, int *heap_locks, Partial_Buffer *p
     // take root node lock
     if (my_thread_id == MASTER_THREAD)
     {
+        // printf("%d %d\n", my_id, heap -> global_id);
         while(atomicCAS(&(heap -> global_id), my_id, 0) != my_id);
         take_lock(&heap_locks[ROOT_NODE_IDX], AVAILABLE, INUSE);
         atomicCAS(&(heap -> global_id), 0, my_id + 1);
+        // printf("locked");
     }
     __syncthreads();
     
     const int double_batch_size = BATCH_SIZE << 1;
-    volatile __shared__ int arr1_shared_mem[BATCH_SIZE];
-    volatile __shared__ int arr2_shared_mem[BATCH_SIZE];
-    volatile __shared__ int arr3_shared_mem[BATCH_SIZE];
-    volatile __shared__ int merged_array_shared_mem[double_batch_size];
+    __shared__ int arr1_shared_mem[BATCH_SIZE];
+    __shared__ int arr2_shared_mem[BATCH_SIZE];
+    __shared__ int arr3_shared_mem[BATCH_SIZE];
+    __shared__ int merged_array_shared_mem[double_batch_size];
 
 
     memset_arr(arr1_shared_mem, 0, BATCH_SIZE, INT_MAX);
@@ -613,57 +513,55 @@ __global__ void td_delete(int *items_deleted, int *heap_locks, Partial_Buffer *p
     }
 
 }
+
 __host__ void heap_init() {
+    // allocate space for heap, partial buffer and heap locks
     gpuErrchk( cudaMalloc(&d_partial_buffer, sizeof(Partial_Buffer)));
     gpuErrchk( cudaMalloc(&d_heap, sizeof(Heap))); // need to fill with INT_MAX
+    gpuErrchk( cudaMalloc((void**)&d_heap_locks, NUMBER_OF_NODES * sizeof(int)) );
 
-    heap_init<<<ceil(HEAP_CAPACITY / 1024.0), 1024>>>(d_heap, d_partial_buffer);
+    gpuErrchk( cudaMemset(d_heap_locks, AVAILABLE, NUMBER_OF_NODES * sizeof(int)) );
+
+    heap_init<<<ceil(HEAP_CAPACITY / 1024), 1024>>>(d_heap, d_partial_buffer);
+
+    for(int i = 0 ; i < NUMBER_OF_CUDA_STREAMS ; i++)
+        cudaStreamCreateWithFlags(&(stream[i]), cudaStreamNonBlocking);
+
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchk( cudaDeviceSynchronize() );
 
-    gpuErrchk( cudaMalloc((void**)&d_heap_locks, NUMBER_OF_NODES * sizeof(int)) );
-    gpuErrchk( cudaMemset(d_heap_locks, AVAILABLE, NUMBER_OF_NODES * sizeof(int)) );
 }
 
-
-
-__device__ int binary_search_test(int *arr1, int high, int search, bool consider_equality) {
-    int low = 0, mid = 0;
-    int ans = high;
-    if(high == 0) return 0;
-    while (low <= high)
-    {
-        mid = (low + high) >> 1;
-        if (arr1[mid] >= search and consider_equality) {
-            ans = mid;
-            high = mid - 1;
-        }
-        else if (arr1[mid] > search) {
-            ans = mid;
-            high = mid - 1;
-        }
-        else
-            low = mid + 1;
-    }
-    return ans;
+cudaStream_t get_current_stream() {
+    return stream[stream_id];
 }
-__global__ void merge_and_sort_cpu_test(int *arr1, int idx1, int *arr2, int idx2, int *merged_arr) {
-    int my_thread_id = threadIdx.x + blockIdx.x * blockDim.x;
 
-    if (my_thread_id < idx1) {
-        int x = binary_search_test(arr2, idx2, arr1[my_thread_id], 1);
-        printf("%d %d %d\n", my_thread_id, x, arr1[my_thread_id]);
-        merged_arr[my_thread_id + x ] = arr1[my_thread_id];
+void next_stream_id() {
+    stream_id++;
+    if (stream_id >= NUMBER_OF_CUDA_STREAMS) {
+        stream_id -= NUMBER_OF_CUDA_STREAMS;
     }
-    __syncthreads();
+}
 
-    if (my_thread_id < idx2) {
-        int x = binary_search_test(arr1, idx1, arr2[my_thread_id], 0);
-        // printf("%d", my_thread_id);
-        merged_arr[my_thread_id + x] = arr2[my_thread_id];
-        printf("%d %d\n", my_thread_id, merged_arr[my_thread_id]);
+int get_kernel_id() {
+    return kernel_id++;
+}
+
+__host__ void insert_keys(int *items_to_be_inserted, int total_num_of_keys_insertion) {
+    if (total_num_of_keys_insertion < 0) {
+        return;
     }
 
-    __syncthreads();
-    
+    int num_of_keys_insertion_per_kernel = BATCH_SIZE;
+    for(int i = 0 ; i < total_num_of_keys_insertion; i += BATCH_SIZE) {
+        num_of_keys_insertion_per_kernel = min(total_num_of_keys_insertion - i, BATCH_SIZE);
+        td_insertion<<<1, BLOCK_SIZE, 0, get_current_stream()>>>(items_to_be_inserted + i, num_of_keys_insertion_per_kernel, d_heap_locks, d_partial_buffer, d_heap, get_kernel_id());
+        next_stream_id();
+    }
+
+}
+
+__host__ void delete_keys(int *items_to_be_deleted) {
+    td_delete<<<1, BLOCK_SIZE, 0, get_current_stream()>>>(items_to_be_deleted, d_heap_locks, d_partial_buffer, d_heap, get_kernel_id());
+    next_stream_id();
 }
