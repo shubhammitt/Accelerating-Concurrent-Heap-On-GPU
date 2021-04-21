@@ -5,16 +5,19 @@
 #include<assert.h>
 #include <unistd.h>
 
-int arr[HEAP_CAPACITY];
-int received_arr[HEAP_CAPACITY];
+int *arr;
+int *received_arr;
 
 void test() {
+    arr = new int[HEAP_CAPACITY];
+    received_arr = new int[HEAP_CAPACITY];
+    int n = NUMBER_OF_NODES - 1; // -1 always
 
-    int n = 60000;
-    n = NUMBER_OF_NODES - 1;
-    cout<<n<<"\n";
+    // initialise array for input
     for(int i = 0 ; i < HEAP_CAPACITY; i++)
-        arr[i] = rand() % 5000000+ 10;
+        arr[i] = rand() % 5000000;
+    
+    // initialise input array for device
     int *d_arr;
     gpuErrchk( cudaMalloc((void**)&d_arr, HEAP_CAPACITY * sizeof(int)));
     gpuErrchk( cudaMemcpy(d_arr, (arr) , HEAP_CAPACITY * sizeof(int), cudaMemcpyHostToDevice)); 
@@ -53,7 +56,7 @@ void test() {
     time_elapsed_ms = 1000.0 * (c_end-c_start) / CLOCKS_PER_SEC;
     std::cout << "CPU-STL time used: " << time_elapsed_ms << " ms\n";
 
-    CPU_Heap my_heap(HEAP_CAPACITY);
+    // CPU_Heap my_heap(HEAP_CAPACITY);
     c_start = std::clock();
     // for(int i = 1; i < n ; i++)
     // {
@@ -70,14 +73,13 @@ void test() {
     std::cout << "CPU my heap time used: " << time_elapsed_ms << " ms\n";
 
     gpuErrchk( cudaMemcpy(received_arr, d_arr_rec, HEAP_CAPACITY * sizeof(int), cudaMemcpyDeviceToHost));
+
+    // verify
     sort(arr + BATCH_SIZE, arr + n * BATCH_SIZE);
-    // for(int i = 1 ; i < 4 ; i++)
-    //     cout << received_arr[i] << " " << b ->arr[i] << "\n";
     bool correct = 1;
     for(int i = BATCH_SIZE ; i < n*BATCH_SIZE ; i++) {
         if (arr[i] != received_arr[i]) {
             correct = 0;
-            cout << arr[i] << " " << received_arr[i] << " " << i << "\n";
             break;
         }
     }

@@ -75,6 +75,6 @@ __global__ void td_delete(int *items_deleted, int *heap_locks, Partial_Buffer *p
 __host__ void heap_init();
 __host__ void insert_keys(int *items_to_be_inserted, int total_num_of_keys_insertion);
 __host__ void delete_keys(int *items_to_be_deleted);
-int get_kernel_id();
-void next_stream_id();
-cudaStream_t get_current_stream();
+__host__ int get_kernel_id();
+__host__ void next_stream_id();
+__host__ cudaStream_t get_current_stream();

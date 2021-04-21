@@ -156,10 +156,9 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
     */
     int my_thread_id = threadIdx.x;
 
-    const int double_batch_size = BATCH_SIZE << 1;
     __shared__ int items_to_be_inserted_shared_mem[BATCH_SIZE];
     __shared__ int array_to_be_merged_shared_mem[BATCH_SIZE];
-    __shared__ int merged_array_shared_mem[double_batch_size];
+    __shared__ int merged_array_shared_mem[BATCH_SIZE << 1];
 
     // copy keys to be inserted in shared memory
     copy_arr1_to_arr2(items_to_be_inserted, 0, items_to_be_inserted_shared_mem, 0, number_of_items_to_be_inserted);
@@ -297,11 +296,10 @@ __global__ void td_delete(int *items_deleted, int *heap_locks, Partial_Buffer *p
     
     int my_thread_id = threadIdx.x;
 
-    const int double_batch_size = BATCH_SIZE << 1;
     __shared__ int arr1_shared_mem[BATCH_SIZE];
     __shared__ int arr2_shared_mem[BATCH_SIZE];
     __shared__ int arr3_shared_mem[BATCH_SIZE];
-    __shared__ int merged_array_shared_mem[double_batch_size];
+    __shared__ int merged_array_shared_mem[BATCH_SIZE << 2];
 
     // take root node lock
     if (my_thread_id == MASTER_THREAD)
@@ -487,18 +485,18 @@ __host__ void heap_init() {
 
 }
 
-cudaStream_t get_current_stream() {
+__host__ cudaStream_t get_current_stream() {
     return stream[stream_id];
 }
 
-void next_stream_id() {
+__host__ void next_stream_id() {
     stream_id++;
     if (stream_id >= NUMBER_OF_CUDA_STREAMS) {
         stream_id -= NUMBER_OF_CUDA_STREAMS;
     }
 }
 
-int get_kernel_id() {
+__host__ int get_kernel_id() {
     return kernel_id++;
 }
 
