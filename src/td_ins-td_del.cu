@@ -157,25 +157,11 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
      * number_of_items_to_be_inserted <= BATCH_SIZE
     */
     int my_thread_id = threadIdx.x;
-     // take root node lock
-     if (my_thread_id == MASTER_THREAD){
-        while(atomicCAS(&(heap -> global_id), my_id, 0) != my_id);
-        take_lock(&heap_locks[ROOT_NODE_IDX], AVAILABLE, INUSE);
-        atomicCAS(&(heap -> global_id), 0, my_id + 1);
-    }
-    __syncthreads();
 
     const int double_batch_size = BATCH_SIZE << 1;
     __shared__ int items_to_be_inserted_shared_mem[BATCH_SIZE];
     __shared__ int array_to_be_merged_shared_mem[BATCH_SIZE];
     __shared__ int merged_array_shared_mem[double_batch_size];
-
-    memset_arr(items_to_be_inserted_shared_mem, 0, BATCH_SIZE, INT_MAX);
-    memset_arr(array_to_be_merged_shared_mem, 0, BATCH_SIZE, INT_MAX);
-    memset_arr(merged_array_shared_mem, 0, BATCH_SIZE, INT_MAX);
-    memset_arr(merged_array_shared_mem, BATCH_SIZE, double_batch_size, INT_MAX);
-    __syncthreads();
-
 
     // copy keys to be inserted in shared memory
     copy_arr1_to_arr2(items_to_be_inserted, 0, number_of_items_to_be_inserted, items_to_be_inserted_shared_mem, 0);
@@ -184,6 +170,14 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
     // sort the keys to be inserted
     bitonic_sort(items_to_be_inserted_shared_mem, number_of_items_to_be_inserted);
 
+     // take root node lock
+     if (my_thread_id == MASTER_THREAD){
+        while(atomicCAS(&(heap -> global_id), my_id, 0) != my_id);
+        take_lock(&heap_locks[ROOT_NODE_IDX], AVAILABLE, INUSE);
+        atomicCAS(&(heap -> global_id), 0, my_id + 1);
+    }
+    __syncthreads();
+    
     // copy partial buffer into shared memory
     copy_arr1_to_arr2(partial_buffer -> arr, 0, partial_buffer -> size, array_to_be_merged_shared_mem, 0);
     __syncthreads();
@@ -258,6 +252,7 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
     
     // take lock on target node 
     if (tar != ROOT_NODE_IDX) {
+        // printf("locked");
         if (my_thread_id == MASTER_THREAD) {
             take_lock(&heap_locks[tar], AVAILABLE, INUSE);
         }
@@ -306,30 +301,21 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
 __global__ void td_delete(int *items_deleted, int *heap_locks, Partial_Buffer *partial_buffer, Heap *heap, int my_id) {
     
     int my_thread_id = threadIdx.x;
-    // take root node lock
-    if (my_thread_id == MASTER_THREAD)
-    {
-        // printf("%d %d\n", my_id, heap -> global_id);
-        while(atomicCAS(&(heap -> global_id), my_id, 0) != my_id);
-        take_lock(&heap_locks[ROOT_NODE_IDX], AVAILABLE, INUSE);
-        atomicCAS(&(heap -> global_id), 0, my_id + 1);
-        // printf("locked");
-    }
-    __syncthreads();
-    
+
     const int double_batch_size = BATCH_SIZE << 1;
     __shared__ int arr1_shared_mem[BATCH_SIZE];
     __shared__ int arr2_shared_mem[BATCH_SIZE];
     __shared__ int arr3_shared_mem[BATCH_SIZE];
     __shared__ int merged_array_shared_mem[double_batch_size];
 
-
-    memset_arr(arr1_shared_mem, 0, BATCH_SIZE, INT_MAX);
-    memset_arr(arr2_shared_mem, 0, BATCH_SIZE, INT_MAX);
-    memset_arr(arr3_shared_mem, 0, BATCH_SIZE, INT_MAX);
-    memset_arr(merged_array_shared_mem, 0, BATCH_SIZE, INT_MAX);
-    memset_arr(merged_array_shared_mem, BATCH_SIZE, double_batch_size, INT_MAX);
-
+    // take root node lock
+    if (my_thread_id == MASTER_THREAD)
+    {
+        while(atomicCAS(&(heap -> global_id), my_id, 0) != my_id);
+        take_lock(&heap_locks[ROOT_NODE_IDX], AVAILABLE, INUSE);
+        atomicCAS(&(heap -> global_id), 0, my_id + 1);
+    }
+    __syncthreads();
 
     // heap is empty
     if (heap -> size == 0) {
@@ -520,12 +506,12 @@ __host__ void heap_init() {
     gpuErrchk( cudaMalloc(&d_heap, sizeof(Heap))); // need to fill with INT_MAX
     gpuErrchk( cudaMalloc((void**)&d_heap_locks, NUMBER_OF_NODES * sizeof(int)) );
 
-    gpuErrchk( cudaMemset(d_heap_locks, AVAILABLE, NUMBER_OF_NODES * sizeof(int)) );
-
-    heap_init<<<ceil(HEAP_CAPACITY / 1024), 1024>>>(d_heap, d_partial_buffer);
-
     for(int i = 0 ; i < NUMBER_OF_CUDA_STREAMS ; i++)
         cudaStreamCreateWithFlags(&(stream[i]), cudaStreamNonBlocking);
+
+    gpuErrchk( cudaMemsetAsync(d_heap_locks, AVAILABLE, NUMBER_OF_NODES * sizeof(int), get_current_stream()) );
+    next_stream_id();
+    heap_init<<<ceil(HEAP_CAPACITY / 1024), 1024, 0, get_current_stream()>>>(d_heap, d_partial_buffer);
 
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchk( cudaDeviceSynchronize() );
