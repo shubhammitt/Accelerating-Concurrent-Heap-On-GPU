@@ -63,8 +63,8 @@ __device__ void release_lock(int *lock, int lock_state_1, int lock_state_2);
 
 __global__ void heap_init(Heap *heap,  Partial_Buffer *partial_buffer);
 __device__ int bit_reversal(int n);
-__device__ void copy_arr1_to_arr2(int *arr1, int from_arr_idx1, int to_arr_idx2, int *arr2, int from_arr2_idx1);
-__device__ void memset_arr(int *arr, int from_arr_idx1, int to_arr_idx2, int val = INT_MAX);
+__device__ void copy_arr1_to_arr2(int *arr1, int from_arr1_idx1, int *arr2, int from_arr2_idx1, int num_of_elements);
+__device__ void memset_arr(int *arr, int from_arr_idx1, int val, int num_of_elements);
 // Algorithm referenced from https://wiki.rice.edu/confluence/download/attachments/4435861/comp322-s12-lec28-slides-JMC.pdf?version=1&modificationDate=1333163955158
 __device__ void bitonic_sort(int *arr, int size);
 __device__ int binary_search(int *arr1, int high, int search, bool consider_equality);
