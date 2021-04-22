@@ -85,7 +85,7 @@ void test() {
         if (arr[i] != received_arr[i]) {
             correct = 0;
             cout << arr[i] << " " << received_arr[i] << "\n";
-            break;
+            // break;
         }
     }
 
