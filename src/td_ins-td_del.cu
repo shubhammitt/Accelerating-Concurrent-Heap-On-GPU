@@ -546,6 +546,7 @@ __host__ int get_kernel_id() {
 }
 
 __host__ void insert_keys(int *items_to_be_inserted, int total_num_of_keys_insertion) {
+    // call insert kernel according to number of elements to be inserted inside heap
     if (total_num_of_keys_insertion < 0) {
         return;
     }
@@ -560,12 +561,14 @@ __host__ void insert_keys(int *items_to_be_inserted, int total_num_of_keys_inser
 }
 
 __host__ void delete_keys(int *items_to_be_deleted) {
+    // launch kernel for batch deletion
     td_delete<<<1, BLOCK_SIZE, 0, get_current_stream()>>>(items_to_be_deleted, d_heap_locks, d_partial_buffer, d_heap, get_kernel_id());
     next_stream_id();
 }
 
 
 __host__ void heap_finalise() {
+    // deallocates memory allocated for heap
     cudaFree(d_partial_buffer);
     cudaFree(d_heap);
     cudaFree(d_heap_locks);

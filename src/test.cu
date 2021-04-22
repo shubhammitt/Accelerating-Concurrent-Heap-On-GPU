@@ -6,49 +6,102 @@
 #include <unistd.h>
 using namespace std;
 
-int *arr;
-int *received_arr;
+int *arr; // input
+int *received_arr; // output
 
-void test() {
+void input1_ascending(int *arr, int n) {
+    for(int i = 0 ; i < n ; i++)
+        arr[i] = i;
+}
+
+
+void input2_decsending(int *arr, int n) {
+    int m = 1e8;
+    for(int i = 0 ; i < n ; i++)
+        arr[i] = m--;
+}
+
+void input3_random(int *arr, int n) {
+    int m = 1e8;
+    for(int i = 0 ; i < n ; i++)
+        arr[i] = rand() % m;
+}
+
+void verify_results(int *h_arr, int *d_arr, int n) {
+    bool correct = 1;
+    for(int i = 0 ; i < n ; i++) {
+        if (h_arr[i] != d_arr[i]) {
+            correct = 0;
+            cout << h_arr[i] << " " << d_arr[i] << " " << i << "\n";
+            break;
+        }
+    }
+    cout << ((correct)?"Success\n":"Failed!\n");
+}
+
+void test(int tc) {
     int n = NUMBER_OF_NODES;
     int heap_capacity = n * BATCH_SIZE;
+
+    // alocate input array for host
     arr = new int[heap_capacity];
     received_arr = new int[heap_capacity];
 
-    // initialise array for input
-    for(int i = 0 ; i < heap_capacity; i++)
-        arr[i] = rand() % 5000000;
-    
-    // initialise input array for device
+
+    // initialise array for input host
+    if(tc == 1)
+        input1_ascending(arr, heap_capacity);
+    else if(tc == 2)
+        input2_decsending(arr, heap_capacity);
+    else
+        input3_random(arr, heap_capacity);
+
+    // initialise data structure
+    heap_init();
+    // allocate initialise input array for device
     int *d_arr;
     gpuErrchk( cudaMalloc((void**)&d_arr, heap_capacity * sizeof(int)));
-    gpuErrchk( cudaMemcpy(d_arr, (arr) , heap_capacity * sizeof(int), cudaMemcpyHostToDevice)); 
+    gpuErrchk( cudaMemcpy(d_arr, arr , heap_capacity * sizeof(int), cudaMemcpyHostToDevice)); 
 
+    // output received array of device
     int *d_arr_rec;
     gpuErrchk( cudaMalloc((void**)&d_arr_rec, heap_capacity * sizeof(int)));
-    cudaDeviceSynchronize();
+
+    // start timer
     std::clock_t c_start = std::clock();
 
+    // start insertion
     for(int i = 0; i < n  ; i++) {
         insert_keys(d_arr + i * BATCH_SIZE, BATCH_SIZE);   
     }
+    // start deletion
     for(int i = 0 ; i < n; i++) {
         delete_keys(d_arr_rec + i * BATCH_SIZE);
     }
+
+    // wait for kernels to execute
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchk( cudaDeviceSynchronize() );
 
+    // end timer
     std::clock_t c_end = std::clock();
     long double time_elapsed_ms = 1000.0 * (c_end-c_start) / CLOCKS_PER_SEC;
-    std::cout << "GPU time used: " << time_elapsed_ms << " ms\n";
+    std::cout << "GPU kernel time : " << time_elapsed_ms << " ms\n";
+
+    // copy output array from device to host
     gpuErrchk( cudaMemcpy(received_arr, d_arr_rec, heap_capacity * sizeof(int), cudaMemcpyDeviceToHost));
+
+    // free input array
     cudaFree(d_arr);
+    // free output array
     cudaFree(d_arr_rec);
+    // free heap on device
     heap_finalise();
 
+    // STL heap testing
     priority_queue<int> pq;
     c_start = std::clock();
-    // for(int i = 1; i < n ; i++)
+    // for(int i = 0; i < n ; i++)
     // {
     //     for(int j = i * BATCH_SIZE; j < (i+1) * BATCH_SIZE ; j++)
     //     {
@@ -59,9 +112,10 @@ void test() {
     //     pq.pop();
     // }
     c_end = std::clock();
-    time_elapsed_ms = 1000.0 * (c_end-c_start) / CLOCKS_PER_SEC;
-    std::cout << "CPU-STL time used: " << time_elapsed_ms << " ms\n";
+    time_elapsed_ms = 1000.0 * (c_end - c_start) / CLOCKS_PER_SEC;
+    std::cout << "CPU-STL time : " << time_elapsed_ms << " ms\n";
 
+    // Sequential Heap testing
     // CPU_Heap my_heap(heap_capacity);
     c_start = std::clock();
     // for(int i = 1; i < n ; i++)
@@ -75,28 +129,16 @@ void test() {
     //     my_heap.pop();
     // }
     c_end = std::clock();
-    time_elapsed_ms = 1000.0 * (c_end-c_start) / CLOCKS_PER_SEC;
+    time_elapsed_ms = 1000.0 * (c_end - c_start) / CLOCKS_PER_SEC;
     std::cout << "CPU my heap time used: " << time_elapsed_ms << " ms\n";
 
     // verify
     sort(arr, arr + heap_capacity);
-    bool correct = 1;
-    for(int i = 0 ; i < heap_capacity ; i++) {
-        if (arr[i] != received_arr[i]) {
-            correct = 0;
-            cout << arr[i] << " " << received_arr[i] << "\n";
-            // break;
-        }
-    }
+    verify_results(arr, received_arr, heap_capacity);
 
-    cout << ((correct)?"Success\n":"Failed!\n");
 }
 
 int main()
 {
-    heap_init();
-    // srand(0);
-    srand(time(NULL));
-    test();
-    
+    test(2);
 }
