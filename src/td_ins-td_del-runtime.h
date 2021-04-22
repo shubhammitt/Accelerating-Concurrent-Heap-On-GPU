@@ -21,3 +21,4 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 __host__ void heap_init();
 __host__ void insert_keys(int *items_to_be_inserted, int total_num_of_keys_insertion);
 __host__ void delete_keys(int *items_to_be_deleted);
+__host__ void heap_finalise();

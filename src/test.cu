@@ -41,6 +41,10 @@ void test() {
     std::clock_t c_end = std::clock();
     long double time_elapsed_ms = 1000.0 * (c_end-c_start) / CLOCKS_PER_SEC;
     std::cout << "GPU time used: " << time_elapsed_ms << " ms\n";
+    gpuErrchk( cudaMemcpy(received_arr, d_arr_rec, heap_capacity * sizeof(int), cudaMemcpyDeviceToHost));
+    cudaFree(d_arr);
+    cudaFree(d_arr_rec);
+    heap_finalise();
 
     priority_queue<int> pq;
     c_start = std::clock();
@@ -73,8 +77,6 @@ void test() {
     c_end = std::clock();
     time_elapsed_ms = 1000.0 * (c_end-c_start) / CLOCKS_PER_SEC;
     std::cout << "CPU my heap time used: " << time_elapsed_ms << " ms\n";
-
-    gpuErrchk( cudaMemcpy(received_arr, d_arr_rec, heap_capacity * sizeof(int), cudaMemcpyDeviceToHost));
 
     // verify
     sort(arr, arr + heap_capacity);

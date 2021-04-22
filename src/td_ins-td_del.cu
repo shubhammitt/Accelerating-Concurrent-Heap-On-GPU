@@ -529,3 +529,12 @@ __host__ void delete_keys(int *items_to_be_deleted) {
     td_delete<<<1, BLOCK_SIZE, 0, get_current_stream()>>>(items_to_be_deleted, d_heap_locks, d_partial_buffer, d_heap, get_kernel_id());
     next_stream_id();
 }
+
+
+__host__ void heap_finalise() {
+    cudaFree(d_partial_buffer);
+    cudaFree(d_heap);
+    cudaFree(d_heap_locks);
+    for(int i = 0 ; i < NUMBER_OF_CUDA_STREAMS ; i++)
+        cudaStreamDestroy(stream[i]);
+}
