@@ -23,7 +23,7 @@ struct Partial_Buffer
 struct Heap
 {
     int size = 0;
-    int global_id = 1;
+    int global_id = 1;  // helps in taking root lock in sequential order of kernel invocations
     int arr[HEAP_CAPACITY];
 };
 

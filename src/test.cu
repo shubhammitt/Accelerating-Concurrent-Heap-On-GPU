@@ -84,6 +84,7 @@ void test() {
     for(int i = 0 ; i < heap_capacity ; i++) {
         if (arr[i] != received_arr[i]) {
             correct = 0;
+            cout << arr[i] << " " << received_arr[i] << "\n";
             break;
         }
     }

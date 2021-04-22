@@ -7,21 +7,25 @@
 
 
 __device__ int get_lock_state(int node_idx, int *heap_locks) {
+    // get the state of lock at node_idx
     return heap_locks[node_idx];
 }
 
 
 __device__ void take_lock(int *lock, int lock_state_1, int lock_state_2) {
+    // take lock and loop until successful
     while (atomicCAS(lock, lock_state_1, lock_state_2) != lock_state_1);
 }
 
 
 __device__ int try_lock(int *lock, int lock_state_1, int lock_state_2) {
+    // try to take lock and exit
     return atomicCAS(lock, lock_state_1, lock_state_2);
 }
 
 
 __device__ void release_lock(int *lock, int lock_state_1, int lock_state_2) {
+    // release lock atmically
     atomicCAS(lock, lock_state_1, lock_state_2);
 }
 
@@ -49,6 +53,7 @@ __device__ int bit_reversal(int n, int level) {
     if (n <= 4)
         return n;
     int ans = 1 << (level--);
+    // reverse all bits but first
     while(n != 1) {
         ans += ((n & 1) << (level--));
         n >>= 1;
@@ -105,22 +110,31 @@ __device__ void bitonic_sort(int *arr, int size) {
 
 
 __device__ int binary_search(int *arr1, int high, int search, bool consider_equality) {
+    /*
+     * Finds index of the smallest element larger than the element searched in arr1
+     * and consider equality means equal element will not be considered larger 
+    */
     if(high == 0) return 0;
     int low = 0, mid = 0;
     int ans = high;
     while (low <= high)
     {
+        // consider middle index between low and high
         mid = (low + high) >> 1;
         if (arr1[mid] >= search and consider_equality) {
-            ans = min(ans, mid);
+            // search in left half
+            ans = mid;
             high = mid - 1;
         }
         else if (arr1[mid] > search) {
-            ans = min(ans, mid);
+            // search in left half
+            ans = mid;
             high = mid - 1;
         }
-        else
+        else {
+            // search in right half
             low = mid + 1;
+        }
     }
     return ans;
 }
@@ -128,23 +142,29 @@ __device__ int binary_search(int *arr1, int high, int search, bool consider_equa
 
 __device__ void merge_and_sort(int *arr1, int idx1, int *arr2, int idx2, int *merged_arr) {
 
+    
     if(idx1 == 0) {
+        // arr1 if empty then simply copy arr2 
         copy_arr1_to_arr2(arr2, 0, merged_arr, 0, idx2);
     }
     else if(idx2 == 0) {
+        // arr2 if empty then simply copy arr1
         copy_arr1_to_arr2(arr1, 0, merged_arr, 0, idx1);
     }
     
     else if(arr1[idx1 - 1] <= arr2[0]) {
+        // all elements of arr1 <= all elements of arr2
         copy_arr1_to_arr2(arr1, 0, merged_arr, 0, idx1);
         copy_arr1_to_arr2(arr2, 0, merged_arr, idx1, idx2);
     }
 
-    else if(arr2[idx2 - 1] <= arr1[0]) {
+    else if(arr2[idx2 - 1] <= arr1[0]) {\
+        // all elements of arr2 <= all elements of arr1
         copy_arr1_to_arr2(arr2, 0, merged_arr, 0, idx2);
         copy_arr1_to_arr2(arr1, 0, merged_arr, idx2, idx1);
     }
     else {
+        // no special case so need to perform binary search
         int my_thread_id = threadIdx.x;
         if (my_thread_id < idx1) {
             int x = binary_search(arr2, idx2, arr1[my_thread_id], 1);
@@ -161,7 +181,7 @@ __device__ void merge_and_sort(int *arr1, int idx1, int *arr2, int idx2, int *me
 }
 
 
-__global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_be_inserted, int *heap_locks, Partial_Buffer *partial_buffer, Heap *heap, int my_id) {
+__global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_be_inserted, int *heap_locks, Partial_Buffer *partial_buffer, Heap *heap, int my_kernel_id) {
     /*
      * number_of_items_to_be_inserted <= BATCH_SIZE
     */
@@ -180,9 +200,9 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
 
      // take root node lock
      if (my_thread_id == MASTER_THREAD){
-        while(atomicCAS(&(heap -> global_id), my_id, 0) != my_id);
+        while(atomicCAS(&(heap -> global_id), my_kernel_id, 0) != my_kernel_id);
         take_lock(&heap_locks[ROOT_NODE_IDX], AVAILABLE, INUSE);
-        atomicCAS(&(heap -> global_id), 0, my_id + 1);
+        atomicCAS(&(heap -> global_id), 0, my_kernel_id + 1);
     }
     __syncthreads();
     
@@ -303,7 +323,7 @@ __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_b
     __syncthreads();
 }
 
-__global__ void td_delete(int *items_deleted, int *heap_locks, Partial_Buffer *partial_buffer, Heap *heap, int my_id) {
+__global__ void td_delete(int *items_deleted, int *heap_locks, Partial_Buffer *partial_buffer, Heap *heap, int my_kernel_id) {
     
     int my_thread_id = threadIdx.x;
 
@@ -315,9 +335,9 @@ __global__ void td_delete(int *items_deleted, int *heap_locks, Partial_Buffer *p
     // take root node lock
     if (my_thread_id == MASTER_THREAD)
     {
-        while(atomicCAS(&(heap -> global_id), my_id, 0) != my_id);
+        while(atomicCAS(&(heap -> global_id), my_kernel_id, 0) != my_kernel_id);
         take_lock(&heap_locks[ROOT_NODE_IDX], AVAILABLE, INUSE);
-        atomicCAS(&(heap -> global_id), 0, my_id + 1);
+        atomicCAS(&(heap -> global_id), 0, my_kernel_id + 1);
     }
     __syncthreads();
 
