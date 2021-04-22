@@ -1,35 +1,18 @@
-#include<iostream>
-using namespace std;
-
+#include "td_ins-td_del-runtime.h"
 /* 
- * ALERT: BLOCK_SIZE >= BATCH_SIZE always to ensure correctness of code
+ * BLOCK_SIZE >= BATCH_SIZE always to ensure correctness of code
  * For full usage of GPU resources, BLOCK_SIZE = BATCH_SIZE 
  * BATCH_SIZE should be power of 2
  */
 
-#define BATCH_SIZE 1024
 #define BLOCK_SIZE BATCH_SIZE
 #define PARTIAL_BUFFER_CAPACITY (BATCH_SIZE - 1)
- // should be power of 2
-#define NUMBER_OF_NODES (1<<17)
-#define HEAP_CAPACITY (NUMBER_OF_NODES) * (BATCH_SIZE)
+// node 0 will be wasted
+#define HEAP_CAPACITY (NUMBER_OF_NODES + 1) * (BATCH_SIZE) 
 #define ROOT_NODE_IDX 1
 #define MASTER_THREAD 0
-// should be <= 20, depends on the number of SMs in a GPU
-#define NUMBER_OF_CUDA_STREAMS 16
 
-enum LOCK_STATES {AVAILABLE, INUSE, TARGET, MARKED};
-
-// Code taken from https://stackoverflow.com/a/14038590
-#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
-inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
-{
-   if (code != cudaSuccess) 
-   {
-      fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
-      if (abort) exit(code);
-   }
-}
+enum LOCK_STATES {AVAILABLE, INUSE};
 
 struct Partial_Buffer
 {
@@ -44,17 +27,12 @@ struct Heap
     int arr[HEAP_CAPACITY];
 };
 
-#ifndef GLOBAL_H
-#define GLOBAL_H
-
-inline Heap *d_heap;
-inline Partial_Buffer *d_partial_buffer;
-inline int *d_heap_locks;
-inline cudaStream_t stream[NUMBER_OF_CUDA_STREAMS];
-inline int kernel_id = 1;
-inline int stream_id = 0;
-
-#endif
+Heap *d_heap;
+Partial_Buffer *d_partial_buffer;
+int *d_heap_locks;
+cudaStream_t stream[NUMBER_OF_CUDA_STREAMS];
+int kernel_id = 1;
+int stream_id = 0;
 
 __device__ int get_lock_state(int node_idx, int *heap_locks);
 __device__ void take_lock(int *lock, int lock_state_1, int lock_state_2);
@@ -72,9 +50,6 @@ __device__ int binary_search(int *arr1, int high, int search, bool consider_equa
 __device__ void merge_and_sort(int *arr1, int idx1, int *arr2, int idx2, int *merged_arr);
 __global__ void td_insertion(int *items_to_be_inserted, int number_of_items_to_be_inserted, int *heap_locks, Partial_Buffer *partial_buffer, Heap *heap, int my_id);
 __global__ void td_delete(int *items_deleted, int *heap_locks, Partial_Buffer *partial_buffer, Heap *heap, int my_id);
-__host__ void heap_init();
-__host__ void insert_keys(int *items_to_be_inserted, int total_num_of_keys_insertion);
-__host__ void delete_keys(int *items_to_be_deleted);
 __host__ int get_kernel_id();
 __host__ void next_stream_id();
 __host__ cudaStream_t get_current_stream();
