@@ -106,7 +106,6 @@ __device__ void bitonic_sort(int *arr, int size) {
 
 __device__ int binary_search(int *arr1, int high, int search, bool consider_equality) {
     if(high == 0) return 0;
-    
     int low = 0, mid = 0;
     int ans = high;
     while (low <= high)
@@ -128,22 +127,34 @@ __device__ int binary_search(int *arr1, int high, int search, bool consider_equa
 
 
 __device__ void merge_and_sort(int *arr1, int idx1, int *arr2, int idx2, int *merged_arr) {
-    int my_thread_id = threadIdx.x;
-    int y = -1;
-    if(my_thread_id < BATCH_SIZE) {
-        merged_arr[my_thread_id] = y;
-        merged_arr[my_thread_id + BATCH_SIZE] = y;
-    }
-    __syncthreads();
 
-    if (my_thread_id < idx1) {
-        int x = binary_search(arr2, idx2, arr1[my_thread_id], 1);
-        merged_arr[my_thread_id + x] = arr1[my_thread_id];
+    if(idx1 == 0) {
+        copy_arr1_to_arr2(arr2, 0, merged_arr, 0, idx2);
+    }
+    else if(idx2 == 0) {
+        copy_arr1_to_arr2(arr1, 0, merged_arr, 0, idx1);
+    }
+    
+    else if(arr1[idx1 - 1] <= arr2[0]) {
+        copy_arr1_to_arr2(arr1, 0, merged_arr, 0, idx1);
+        copy_arr1_to_arr2(arr2, 0, merged_arr, idx1, idx2);
     }
 
-    if (my_thread_id < idx2) {
-        int x = binary_search(arr1, idx1, arr2[my_thread_id], 0);
-        merged_arr[my_thread_id + x] = arr2[my_thread_id];
+    else if(arr2[idx2 - 1] <= arr1[0]) {
+        copy_arr1_to_arr2(arr2, 0, merged_arr, 0, idx2);
+        copy_arr1_to_arr2(arr1, 0, merged_arr, idx2, idx1);
+    }
+    else {
+        int my_thread_id = threadIdx.x;
+        if (my_thread_id < idx1) {
+            int x = binary_search(arr2, idx2, arr1[my_thread_id], 1);
+            merged_arr[my_thread_id + x] = arr1[my_thread_id];
+        }
+
+        if (my_thread_id < idx2) {
+            int x = binary_search(arr1, idx1, arr2[my_thread_id], 0);
+            merged_arr[my_thread_id + x] = arr2[my_thread_id];
+        }
     }
     __syncthreads();
     
