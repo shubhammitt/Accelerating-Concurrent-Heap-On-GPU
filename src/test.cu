@@ -8,6 +8,7 @@ using namespace std;
 
 int *arr; // input
 int *received_arr; // output
+int *seq_out;
 
 void input1_ascending(int *arr, int n) {
     for(int i = 0 ; i < n ; i++)
@@ -45,6 +46,7 @@ void test(int tc) {
 
     // alocate input array for host
     arr = new int[heap_capacity];
+    seq_out = new int[heap_capacity];
     received_arr = new int[heap_capacity];
 
 
@@ -56,6 +58,8 @@ void test(int tc) {
     else
         input3_random(arr, heap_capacity);
 
+    
+    std::clock_t c_start_gpu = std::clock();
     // initialise data structure
     heap_init();
     // allocate initialise input array for device
@@ -86,7 +90,7 @@ void test(int tc) {
     // end timer
     std::clock_t c_end = std::clock();
     long double time_elapsed_ms = 1000.0 * (c_end-c_start) / CLOCKS_PER_SEC;
-    std::cout << "GPU kernel time : " << time_elapsed_ms << " ms\n";
+    std::cout << "GPU kernel Execution time : \t" << time_elapsed_ms << " ms\n";
 
     // copy output array from device to host
     gpuErrchk( cudaMemcpy(received_arr, d_arr_rec, heap_capacity * sizeof(int), cudaMemcpyDeviceToHost));
@@ -97,48 +101,54 @@ void test(int tc) {
     cudaFree(d_arr_rec);
     // free heap on device
     heap_finalise();
+    std::clock_t c_end_gpu = std::clock();
+    time_elapsed_ms = 1000.0 * (c_end_gpu-c_start_gpu) / CLOCKS_PER_SEC;
+    std::cout << "GPU Full Execution time :\t" << time_elapsed_ms << " ms\n";
+
 
     // STL heap testing
     priority_queue<int> pq;
     c_start = std::clock();
-    // for(int i = 0; i < n ; i++)
-    // {
-    //     for(int j = i * BATCH_SIZE; j < (i+1) * BATCH_SIZE ; j++)
-    //     {
-    //         pq.push(arr[j]);
-    //     }
-    // }
-    // while(pq.size()!=0) {
-    //     pq.pop();
-    // }
+    for(int i = 0; i < n ; i++)
+    {
+        for(int j = i * BATCH_SIZE; j < (i+1) * BATCH_SIZE ; j++)
+        {
+            pq.push(arr[j]);
+        }
+    }
+    while(pq.size()!=0) {
+        pq.pop();
+    }
     c_end = std::clock();
     time_elapsed_ms = 1000.0 * (c_end - c_start) / CLOCKS_PER_SEC;
-    std::cout << "CPU-STL time : " << time_elapsed_ms << " ms\n";
+    std::cout << "CPU-STL Execution time :\t" << time_elapsed_ms << " ms\n";
 
     // Sequential Heap testing
-    // CPU_Heap my_heap(heap_capacity);
+    CPU_Heap my_heap(heap_capacity);
     c_start = std::clock();
-    // for(int i = 1; i < n ; i++)
-    // {
-    //     for(int j = i * BATCH_SIZE; j < (i+1) * BATCH_SIZE ; j++)
-    //     {
-    //         my_heap.push(arr[j]);
-    //     }
-    // }
-    // while(not my_heap.is_empty()) {
-    //     my_heap.pop();
-    // }
+    for(int i = 0; i < n ; i++)
+    {
+        for(int j = i * BATCH_SIZE; j < (i+1) * BATCH_SIZE ; j++)
+        {
+            my_heap.push(arr[j]);
+        }
+    }
+    int x = 0;
+    while(not my_heap.is_empty()) {
+        seq_out[x++] = my_heap.pop();
+    }
     c_end = std::clock();
     time_elapsed_ms = 1000.0 * (c_end - c_start) / CLOCKS_PER_SEC;
-    std::cout << "CPU my heap time used: " << time_elapsed_ms << " ms\n";
+    std::cout << "CPU my heap Execution time:\t" << time_elapsed_ms << " ms\n";
 
     // verify
     sort(arr, arr + heap_capacity);
     verify_results(arr, received_arr, heap_capacity);
+    verify_results(arr, seq_out, heap_capacity);
 
 }
 
 int main()
 {
-    test(2);
+    test(3);
 }

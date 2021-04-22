@@ -24,7 +24,7 @@ void CPU_Heap::push(int key) {
     int child = size;
     arr[child] = key;
     while(child != 1) {
-        if(arr[par] < arr[child])
+        if(arr[par] <= arr[child])
             return;
         swap(arr[par], arr[child]);
         child = par;
