@@ -1,3 +1,8 @@
+/*
+ * Author: Shubham Mittal
+ * IIITD, 2018101
+ * GPU Project: Accelerating Concurrent Heap on GPUs
+*/
 #include <iostream>
 using namespace std;
 // 1-indexed

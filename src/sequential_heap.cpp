@@ -1,3 +1,8 @@
+/*
+ * Author: Shubham Mittal
+ * IIITD, 2018101
+ * GPU Project: Accelerating Concurrent Heap on GPUs
+*/
 #include "sequential_heap.h"
 
 CPU_Heap::CPU_Heap(int _capacity) {

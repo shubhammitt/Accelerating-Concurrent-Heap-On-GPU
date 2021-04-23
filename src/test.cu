@@ -1,3 +1,8 @@
+/*
+ * Author: Shubham Mittal
+ * IIITD, 2018101
+ * GPU Project: Accelerating Concurrent Heap on GPUs
+*/
 #include "td_ins-td_del-runtime.h"
 #include "sequential_heap.h"
 #include <bits/stdc++.h>
@@ -49,7 +54,6 @@ void test(int tc) {
     seq_out = new int[heap_capacity];
     received_arr = new int[heap_capacity];
 
-
     // initialise array for input host
     if(tc == 1)
         input1_ascending(arr, heap_capacity);
@@ -58,7 +62,8 @@ void test(int tc) {
     else
         input3_random(arr, heap_capacity);
 
-    
+
+    cout << "Running on GPU...\n";
     std::clock_t c_start_gpu = std::clock();
     // initialise data structure
     heap_init();
@@ -106,6 +111,7 @@ void test(int tc) {
     std::cout << "GPU Full Execution time :\t" << time_elapsed_ms << " ms\n";
 
 
+    cout << "\nRunning STL-HEAP...\n";
     // STL heap testing
     priority_queue<int> pq;
     c_start = std::clock();
@@ -123,6 +129,7 @@ void test(int tc) {
     time_elapsed_ms = 1000.0 * (c_end - c_start) / CLOCKS_PER_SEC;
     std::cout << "CPU-STL Execution time :\t" << time_elapsed_ms << " ms\n";
 
+    cout << "\nRunning my own CPU heap...\n";
     // Sequential Heap testing
     CPU_Heap my_heap(heap_capacity);
     c_start = std::clock();
@@ -143,12 +150,14 @@ void test(int tc) {
 
     // verify
     sort(arr, arr + heap_capacity);
+    cout << "\nVerifying GPU output...\n";
     verify_results(arr, received_arr, heap_capacity);
+    cout << "\nVerifying CPU output...\n";
     verify_results(arr, seq_out, heap_capacity);
 
 }
 
 int main()
 {
-    test(3);
+    test(3); // input can be 1 for ascending input array, 2 for descending input array and 3 for random input array
 }

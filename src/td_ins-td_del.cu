@@ -50,10 +50,12 @@ __global__ void heap_init(Heap *heap, Partial_Buffer *partial_buffer) {
 
 
 __device__ int bit_reversal(int n, int level) {
-    if (n <= 4)
-        return n;
-    int ans = 1 << (level--);
     // reverse all bits but first
+
+    if (n <= 4) // base case
+        return n;
+
+    int ans = 1 << (level--);
     while(n != 1) {
         ans += ((n & 1) << (level--));
         n >>= 1;
@@ -72,7 +74,7 @@ __device__ void copy_arr1_to_arr2(int *arr1, int from_arr1_idx1, int *arr2, int 
 
 
 __device__ void memset_arr(int *arr, int from_arr_idx1, int val, int num_of_elements) {
-    // sets values to INT_MAX between given indices of arr
+    // sets values of arr to val between given indices of arr
     int my_thread_id = threadIdx.x;
     if (my_thread_id < num_of_elements) {
         arr[from_arr_idx1 + my_thread_id] = val;
@@ -516,12 +518,12 @@ __host__ void heap_init() {
     // allocate space for heap, partial buffer and heap locks
     gpuErrchk( cudaMalloc(&d_partial_buffer, sizeof(Partial_Buffer)));
     gpuErrchk( cudaMalloc(&d_heap, sizeof(Heap))); // need to fill with INT_MAX
-    gpuErrchk( cudaMalloc((void**)&d_heap_locks, NUMBER_OF_NODES * sizeof(int)) );
+    gpuErrchk( cudaMalloc((void**)&d_heap_locks, (1 + NUMBER_OF_NODES) * sizeof(int)) );
 
     for(int i = 0 ; i < NUMBER_OF_CUDA_STREAMS ; i++)
         cudaStreamCreateWithFlags(&(stream[i]), cudaStreamNonBlocking);
 
-    gpuErrchk( cudaMemsetAsync(d_heap_locks, AVAILABLE, NUMBER_OF_NODES * sizeof(int), get_current_stream()) );
+    gpuErrchk( cudaMemsetAsync(d_heap_locks, AVAILABLE, (1 + NUMBER_OF_NODES) * sizeof(int), get_current_stream()) );
     next_stream_id();
     heap_init<<<ceil(HEAP_CAPACITY / 1024), 1024, 0, get_current_stream()>>>(d_heap, d_partial_buffer);
 
