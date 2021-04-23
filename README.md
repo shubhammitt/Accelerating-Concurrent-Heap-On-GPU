@@ -1,6 +1,6 @@
 # Accelerating Concurrent Heap on GPUs
 
-This code is implementation of algortihm described in the following paper:
+This code is implementation of algorithm described in the following paper:
 
 Yan-Hao Chen, Fei Hua, C. Huang, Jeremy Bierema, Chi Zhang, and E. Z. Zhang. 2019. Accelerating Concurrent Heap on GPUs.ArXivabs/1906.06504 (2019).  https://arxiv.org/abs/1906.06504
 
