@@ -12,7 +12,7 @@ How to run:
 
 # Results:
 
-Excellent speedups were obtained in comparison to CPU heap implementation and speedups are as high as 130x when compared STL-heap on inserted approximately 130 million keys in the heap.
+Excellent speedups were obtained in comparison to CPU heap implementation and speedups are as high as 130x when compared to STL-heap on inserting approximately 130 million keys in the heap.
 
 Time graph on varying number of keys inserted:
 ![](https://github.com/CSE-560-GPU-Computing-2021/project_-team_15/blob/master/results/graph1.png)
